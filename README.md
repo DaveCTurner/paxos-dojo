@@ -16,7 +16,7 @@ The Learner is the simplest module. It receives messages that look like this whi
 
 It doesn't send any messages, but should report to the user when it has learned a value. It learns a value by receiving two messages for the same `$PROP` (an integer) but different `$NAME`s. In this case, the `$VALUE` of the two messages will always be the same, so it desn't matter which one you choose to report.
 
-A simple Learner implementation is to keep a list of all messages received and check each new message against all the items that are already in the list, looking for pairs that match on `$PROP` but not on `$NAME`.
+A simple Learner implementation is to keep a list of all messages received and check each new message against all the items that are already in the list, looking for pairs that match on `$PROP` but not on `$NAME`. When such a pair is found, simply print out the `$VALUE` from either message.
 
 ### Proposer
 
@@ -38,13 +38,24 @@ If one of the `promised` messages includes the `max-accepted-value:$MAXVALUE` fi
 
 If both of the `promised` messages include the `max-accepted-value:$MAXVALUE` field then look at the `max-accepted-proposal:$MAXPROP` field, and set `$VALUE` to the `$MAXVALUE` of the message with the greater `$MAXPROP`. In the case of a tie, they will both be equal so it doesn't matter which one is picked.
 
-A simple Proposer implementation is to keep a list of all messages received and check each new message against all the items that are already in the list, looking for pairs that match on `$PROP` but not on `$NAME`.
+A simple Proposer implementation is to keep a list of all messages received and check each new message against all the items that are already in the list, looking for pairs that match on `$PROP` but not on `$NAME`. When such a pair is found, the `$VALUE` can be calculated and the `proposed` message sent as described above.
 
 ### Acceptor
 
-The Acceptor is the most complicated. It receives two kinds of message:
+The Acceptor is the most complicated module. It has a name, `$NAME`, which will be agreed with the facilitator in advance as it must not clash with that of the other Acceptors.
 
-{"type":"prepare","proposal":$PROP}
-{"type":"proposed","proposal":$PROP,"value":$VALUE}
+It receives two kinds of message:
 
-It may respond to a "prepare" message with a "promised" message, and to a "proposed" message with an "accepted" message.
+    {"type":"prepare","proposal":$PROP}
+    {"type":"proposed","proposal":$PROP,"value":$VALUE}
+
+Under the conditions set out below it may respond to these, respectively, with:
+
+    {"type":"promised","proposal":$PROP,"by":$NAME,"max-accepted-proposal":$MAXPROP,"max-accepted-value":$MAXVALUE}
+    {"type":"accepted","proposal":$PROP,"by":$NAME,"value":$VALUE}
+
+It can send a `promised` message... TODO
+
+It may respond
+
+It may respond to a `prepare` message with a `promised` message, as long as it all the `and to a `proposed` message with an `accepted` message.
