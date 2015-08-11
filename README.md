@@ -5,8 +5,8 @@ interesting core: the Synod protocol.
 
 ## Overview
 
-The objective of the protocol is for a distributed system to reach consistent
-agreement on a single value (a string) by communicating over a network. The
+The objective of the protocol is for a distributed system to reach
+agreement on a single value (a string) by communicating over the network. The
 clever bit is that the protocol still works even if the network is unreliable:
 messages may be delayed, reordered or even dropped and the protocol still
 works. The worst thing that can happen is that no agreement is reached, and
