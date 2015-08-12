@@ -8,6 +8,7 @@ import Control.Monad
 import Control.Monad.RWS
 import Control.Monad.Trans.Maybe
 import qualified Data.Set as S
+import Data.Tuple.Utils
 
 type ProposalId = Int
 type AcceptorId = String
@@ -62,46 +63,50 @@ proposer newMessage@(Promised proposalId acceptorId promiseType) = do
 main :: IO ()
 main = hspec $ do
   describe "Learner" $ learnerTest
-    [(Accepted 1 "rosie" "foo", [])
-    ,(Accepted 2 "susan" "bar", [])
-    ,(Accepted 3 "emily" "baz", [])
-    ,(Accepted 3 "emily" "baz", [])
-    ,(Accepted 2 "susan" "bar", [])
-    ,(Accepted 2 "rosie" "bar", ["bar"])
-    ,(Accepted 2 "rosie" "bar", ["bar"])
-    ,(Accepted 2 "emily" "bar", ["bar"])
-    ,(Accepted 2 "susan" "bar", ["bar"])
-    ,(Accepted 4 "susan" "bar", [])
-    ,(Accepted 4 "susan" "bar", [])
-    ,(Accepted 4 "emily" "bar", ["bar"])
+    [(Accepted 1 "alice" "foo", [],      "should learn nothing with the first message")
+    ,(Accepted 2 "brian" "bar", [],      "should learn nothing with a message for a different proposal")
+    ,(Accepted 2 "brian" "bar", [],      "should learn nothing from a duplicate of the previous message")
+    ,(Accepted 2 "chris" "bar", ["bar"], "should learn a value from another message for proposal 2")
     ]
   describe "Proposer" $ proposerTest
-    [(Promised 1 "rosie" Free,                          [])
-    ,(Promised 3 "rosie" Free,                          [])
-    ,(Promised 3 "rosie" Free,                          [])
-    ,(Promised 1 "emily" Free,                          [Proposed 1 "my value"])
-    ,(Promised 1 "susan" Free,                          [])
-    ,(Promised 3 "emily" (Bound 2 "another value"),     [Proposed 3 "another value"])
-    ,(Promised 3 "susan" (Bound 1 "yet another value"), [])
-    ,(Promised 4 "susan" (Bound 1 "yet another value"), [])
-    ,(Promised 4 "rosie" Free,                          [Proposed 4 "yet another value"])
-    ,(Promised 5 "susan" (Bound 1 "yet another value"), [])
-    ,(Promised 5 "emily" (Bound 2 "another value"),     [Proposed 5 "another value"])
-    ,(Promised 6 "emily" (Bound 2 "another value"),     [])
-    ,(Promised 6 "susan" (Bound 1 "yet another value"), [Proposed 6 "another value"])
+    [(Promised 1 "alice" Free,                      [], "should propose nothing from the first message")
+
+    ,(Promised 2 "brian" Free,                      [], "should propose nothing from a message for a different proposal")
+    ,(Promised 2 "brian" Free,                      [], "should propose nothing from a duplicate of the previous message")
+    ,(Promised 2 "chris" Free,                      [Proposed 2 "my value"],
+                                "should propose 'my value' with another promise")
+    ,(Promised 2 "alice" Free,                      [], "should ignore another message for a proposal that's already been made")
+
+    ,(Promised 3 "brian" Free,                      [], "should propose nothing from the first message of proposal 3")
+    ,(Promised 3 "alice" (Bound 1 "alice's value"), [Proposed 3 "alice's value"],
+                                "should propose the value given in the second promise")
+
+    ,(Promised 4 "alice" (Bound 1 "alice's value"), [], "should propose nothing from the first message of proposal 4")
+    ,(Promised 4 "brian" Free,                      [Proposed 4 "alice's value"],
+                                "should propose the value given in the first promise")
+
+    ,(Promised 5 "alice" (Bound 1 "alice's value"), [], "should propose nothing from the first message of proposal 5")
+    ,(Promised 5 "brian" (Bound 2 "brian's value"), [Proposed 5 "brian's value"],
+                                "should propose the value given in the second promise as it has the higher-numbered value")
+
+    ,(Promised 6 "brian" (Bound 2 "brian's value"), [],  "should propose nothing from the first message of proposal 6")
+    ,(Promised 6 "alice" (Bound 1 "alice's value"), [Proposed 6 "brian's value"],
+                                "should propose the value given in the first promise as it has the higher-numbered value")
     ]
 
-learnerTest :: [(AcceptedMessage, [String])] -> SpecWith ()
-learnerTest testSeq = forM_ (inits testSeq) $ \ioPairs -> it ("handles " <> show (length ioPairs) <> " messages")
-  $ let inputs          =          map fst ioPairs
-        expectedOutputs = concat $ map snd ioPairs
-        (_, _, outputs) = runRWS (mapM_ learner inputs) () (LearnerState [])
-  in outputs `shouldBe` expectedOutputs
+learnerTest :: [(AcceptedMessage, [String], String)] -> SpecWith ()
+learnerTest testSeq = forM_ (inits testSeq) $ \ioPairs ->
+  let inputs          =          map fst3 ioPairs
+      expectedOutputs = concat $ map snd3 ioPairs
+      worksAsExpected = last $ "should learn nothing from no messages" : map thd3 ioPairs
+      (_, _, outputs) = runRWS (mapM_ learner inputs) () (LearnerState [])
+  in it worksAsExpected $ outputs `shouldBe` expectedOutputs
 
-proposerTest :: [(PromisedMessage, [ProposedMessage])] -> SpecWith ()
-proposerTest testSeq = forM_ (inits testSeq) $ \ioPairs -> it ("handles " <> show (length ioPairs) <> " messages")
-  $ let inputs          =          map fst ioPairs
-        expectedOutputs = concat $ map snd ioPairs
-        (_, _, outputs) = runRWS (mapM_ proposer inputs) "my value" (ProposerState S.empty [])
-  in outputs `shouldBe` expectedOutputs
+proposerTest :: [(PromisedMessage, [ProposedMessage], String)] -> SpecWith ()
+proposerTest testSeq = forM_ (inits testSeq) $ \ioPairs ->
+  let inputs          =          map fst3 ioPairs
+      expectedOutputs = concat $ map snd3 ioPairs
+      worksAsExpected = last $ "should propose nothing from no messages" : map thd3 ioPairs
+      (_, _, outputs) = runRWS (mapM_ proposer inputs) "my value" (ProposerState S.empty [])
+  in it worksAsExpected $ outputs `shouldBe` expectedOutputs
 
