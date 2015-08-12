@@ -55,6 +55,22 @@ check each new message against all the items that are already in the list,
 looking for pairs that match on `$PROP` but not on `$NAME`. When such a pair is
 found, simply print out the `$VALUE` from either message.
 
+Here is an example of the expected behaviour:
+
+```javascript
+{"type":"accepted","proposal":1,"by":"alice","value":"value 1"}
+  // no value learned - no previous messags
+
+{"type":"accepted","proposal":2,"by":"brian","value":"value 2"}
+  // no value learned - different $PROP from previous message
+
+{"type":"accepted","proposal":2,"by":"brian","value":"value 2"}
+  // no value learned - different $PROP from or same $NAME as previous messages
+
+{"type":"accepted","proposal":2,"by":"chris","value":"value 2"}
+  -> 'value 2' // value learned - same $PROP but different $NAME compared with previous message
+```
+
 ### Proposer
 
 The Proposer is the next simplest module. It has a constant string, `$MYVALUE`,
@@ -98,6 +114,54 @@ When a new message is received, ignore it if its `$PROP` value appears in the
 already-sent list and otherwise check it against all the other received
 messages.  If any of them match on `$PROP` but not on `$NAME` then send a
 `proposed` message with `$VALUE` calculated as described above.
+
+Here is an example of the expected behaviour:
+
+```javascript
+{"type":"promised","proposal":1,"by":"alice"}
+  // nothing proposed - no previous messages
+
+{"type":"promised","proposal":2,"by":"brian"}
+  // nothing proposed - different $PROP from previous message
+
+{"type":"promised","proposal":2,"by":"brian"}
+  // nothing proposed - different $PROP from or same $NAME as previos messages
+
+{"type":"promised","proposal":2,"by":"chris"}
+  -> {"type":"proposed","proposal":2,"value":"my value"}
+  // proposal made using $MYVALUE as no max-accepted-value field in any promises
+
+{"type":"promised","proposal":2,"by":"alice"}
+  // nothing proposed - proposal 2 has already been made
+
+{"type":"promised","proposal":3,"by":"brian"}
+  // nothing proposed - new promise for proposal 3
+
+{"type":"promised","proposal":3,"by":"alice","max-accepted-proposal":1,"max-accepted-value":"alice's value"}
+  -> {"type":"proposed","proposal":3,"value":"alice's value"}
+  // proposal made using value from Alice's promise as it included a max-accepted-value field
+
+{"type":"promised","proposal":4,"by":"alice","max-accepted-proposal":1,"max-accepted-value":"alice's value"}
+  // nothing proposed - new promise for proposal 4
+
+{"type":"promised","proposal":4,"by":"brian"}
+  -> {"type":"proposed","proposal":4,"value":"alice's value"}
+  // proposal made using value from Alice's promise as it included a max-accepted-value field
+
+{"type":"promised","proposal":5,"by":"alice","max-accepted-proposal":1,"max-accepted-value":"alice's value"}
+  // nothing proposed - new promise for proposal 5
+
+{"type":"promised","proposal":5,"by":"brian","max-accepted-proposal":2,"max-accepted-value":"brian's value"}
+  -> {"type":"proposed","proposal":5,"value":"brian's value"}
+  // proposal made using value from Brian's promise as it had the greater value for  max-accepted-proposal
+
+{"type":"promised","proposal":6,"by":"brian","max-accepted-proposal":2,"max-accepted-value":"brian's value"}
+  // nothing proposed - new promise for proposal 6
+
+{"type":"promised","proposal":6,"by":"alice","max-accepted-proposal":1,"max-accepted-value":"alice's value"}
+  -> {"type":"proposed","proposal":6,"value":"brian's value"}
+  // proposal made using value from Brian's promise as it had the greater value for  max-accepted-proposal
+```
 
 ### Acceptor
 
