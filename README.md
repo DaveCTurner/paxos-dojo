@@ -171,10 +171,10 @@ Here is an example of the expected behaviour:
 
 ### Acceptor
 
-The Acceptor is the most complicated module. It has a name, `$NAME`, which will
-be agreed with the facilitator in advance as it must not clash with that of the
-other Acceptors, and which it should include in the `by` field of any messages
-it sends.
+The Acceptor is the most complicated module. It has a name, `$NAME` (one of
+`"alice"`, `"brian"` or `"chris"`) which will be agreed in advance as it must
+not clash with that of the other Acceptors. It should include this name in the
+`by` field of any messages it sends.
 
 It receives two kinds of message:
 
