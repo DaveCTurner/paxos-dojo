@@ -43,7 +43,9 @@ be reached, so don't be too cautious!
 
 The Learner is the simplest module. It receives messages that look like this:
 
-    {"type":"accepted","proposal":$PROP,"by":$NAME,"value":$VALUE}
+```javascript
+{"type":"accepted","proposal":$PROP,"by":$NAME,"value":$VALUE}
+```
 
 It doesn't send any messages, but should report to the user when it has learned
 a value. It learns a value by receiving two messages for the same `$PROP` (an
@@ -80,7 +82,9 @@ idea to include your names or a team identifier so you can track it.
 
 It receives messages that look like this (which are sent by Acceptors):
 
-    {"type":"promised","proposal":$PROP,"by":$NAME,"max-accepted-proposal":$MAXPROP,"max-accepted-value":$MAXVALUE}
+```javascript
+{"type":"promised","proposal":$PROP,"by":$NAME,"max-accepted-proposal":$MAXPROP,"max-accepted-value":$MAXVALUE}
+```
 
 The `max-accepted-proposal` and `max-accepted-value` fields are optional, but
 not independently: either both are present or both are absent.
@@ -88,7 +92,9 @@ not independently: either both are present or both are absent.
 When it has received two of these `promised` messages for the same `$PROP` (an
 integer) with different `$NAME`s, it should respond with a message like this:
 
-    {"type":"proposed","proposal":$PROP,"value":$VALUE}
+```javascript
+{"type":"proposed","proposal":$PROP,"value":$VALUE}
+```
 
 In this situation, `$VALUE` depends on the `$MAXVALUE` and `$MAXPROP` values in
 the two `promised` messages as follows:
@@ -172,13 +178,17 @@ it sends.
 
 It receives two kinds of message:
 
-    {"type":"prepare","proposal":$PROP}
-    {"type":"proposed","proposal":$PROP,"value":$VALUE}
+```javascript
+{"type":"prepare","proposal":$PROP}
+{"type":"proposed","proposal":$PROP,"value":$VALUE}
+```
 
 Under the conditions set out below it may respond to these, respectively, with:
 
-    {"type":"promised","proposal":$PROP,"by":$NAME,"max-accepted-proposal":$MAXPROP,"max-accepted-value":$MAXVALUE}
-    {"type":"accepted","proposal":$PROP,"by":$NAME,"value":$VALUE}
+```javascript
+{"type":"promised","proposal":$PROP,"by":$NAME,"max-accepted-proposal":$MAXPROP,"max-accepted-value":$MAXVALUE}
+{"type":"accepted","proposal":$PROP,"by":$NAME,"value":$VALUE}
+```
 
 A `promised` message is sent in response to the receipt of a `prepare` message.
 The values of `$MAXPROP` and `$MAXVALUE` are calculated by considering the
