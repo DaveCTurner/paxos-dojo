@@ -159,14 +159,14 @@ Here is an example of the expected behaviour:
 
 {"type":"promised","proposal":5,"by":"brian","max-accepted-proposal":2,"max-accepted-value":"brian's value"}
   -> {"type":"proposed","proposal":5,"value":"brian's value"}
-  // proposal made using value from Brian's promise as it had the greater value for  max-accepted-proposal
+  // proposal made using value from Brian's promise as it had the greater value for max-accepted-proposal
 
 {"type":"promised","proposal":6,"by":"brian","max-accepted-proposal":2,"max-accepted-value":"brian's value"}
   // nothing proposed - new promise for proposal 6
 
 {"type":"promised","proposal":6,"by":"alice","max-accepted-proposal":1,"max-accepted-value":"alice's value"}
   -> {"type":"proposed","proposal":6,"value":"brian's value"}
-  // proposal made using value from Brian's promise as it had the greater value for  max-accepted-proposal
+  // proposal made using value from Brian's promise as it had the greater value for max-accepted-proposal
 ```
 
 ### Acceptor
