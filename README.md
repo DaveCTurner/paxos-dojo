@@ -87,11 +87,17 @@ the two `promised` messages as follows:
   field then it is the `$MAXVALUE` of the message with the greater value of
 `$MAXPROP`. In the case of a tie, either will do.
 
-A simple Proposer implementation is to keep a list of all messages received and
-check each new message against all the items that are already in the list,
-looking for pairs that match on `$PROP` but not on `$NAME`. When such a pair is
-found, the `$VALUE` can be calculated and the `proposed` message sent as
-described above.
+It must only ever send out a single `proposed` message for each `$PROP`.
+
+A simple Proposer implementation is to keep
+
+- a list of all messages received, and
+- a list of all `$PROP` values for which `proposed` messages have been sent.
+
+When a new message is received, ignore it if its `$PROP` value appears in the
+already-sent list and otherwise check it against all the other received
+messages.  If any of them match on `$PROP` but not on `$NAME` then send a
+`proposed` message with `$VALUE` calculated as described above.
 
 ### Acceptor
 
