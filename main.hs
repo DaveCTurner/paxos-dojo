@@ -99,10 +99,13 @@ main = do
   logLock <- newMVar ()
 
   forM_ ["alice", "brian", "chris"] $ forkIO . runAcceptor (AcceptorState Nothing Free)
-  forM_ [1..5] $ forkIO . runLearner (LearnerState []) logLock
+  forM_ [0..4] $ forkIO . runLearner (LearnerState []) logLock
   forM_ [0..9] $ forkIO . runProposer (ProposerState S.empty [])
 
-  runLearner (LearnerState []) logLock 0
+  forM_ [1..] $ \proposalId -> do
+    threadDelay 10000000
+    postJSON "http://127.0.0.1:24192/nag"
+      $ object ["type" .= ("prepare" :: String), "proposal" .= (proposalId :: Integer)]
 
 getJSON :: FromJSON a => String -> IO a
 getJSON uri = do
