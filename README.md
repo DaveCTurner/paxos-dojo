@@ -73,6 +73,9 @@ Here is an example of the expected behaviour:
   -> 'value 2' // value learned - same $PROP but different $NAME compared with previous message
 ```
 
+There can be as many Learners running as desired. The fundamental point of Paxos is that
+all values learned by all Learners are equal.
+
 ### Proposer
 
 The Proposer is the next simplest module. It has a constant string, `$MYVALUE`,
