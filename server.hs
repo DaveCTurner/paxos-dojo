@@ -153,7 +153,16 @@ main = do
             <$> readTVar outgoingQueueByNameVar
         writeTVar outgoingQueueByNameVar activeQueuesMap
 
-        forM_ (M.elems activeQueuesMap) $ \(_, queue) -> writeTQueue queue value
+        let isRelevantProposer proposalId = (== (T.encodeUtf8 ("/proposer/" <> T.pack (show (mod proposalId 10)))))
+            shouldOutputTo = case value of
+              Prepare  {} -> B.isPrefixOf (T.encodeUtf8 "/acceptor/")
+              Proposed {} -> B.isPrefixOf (T.encodeUtf8 "/acceptor/")
+              Accepted {} -> B.isPrefixOf (T.encodeUtf8 "/learner/")
+              FreePromised  proposalId _     -> isRelevantProposer proposalId
+              BoundPromised proposalId _ _ _ -> isRelevantProposer proposalId
+
+        forM_ (M.toList activeQueuesMap) $ \(queueName, (_, queue))
+          -> when (shouldOutputTo queueName) $ writeTQueue queue value
 
         return $ do
           forM_ (M.keys staleQueuesMap) $ \staleQueueName ->
