@@ -241,10 +241,10 @@ Here is an example of the expected behaviour, tracking just the greatest `$PROP`
   // ok to accept this proposal as it is >= 2 so consistent with all promises
 
 {"type":"prepare","proposal":1}
-  // no response as have accepted a >= proposaal
+  // no response as have accepted a >= proposal
 
 {"type":"prepare","proposal":2}
-  // no response as have accepted a >= proposaal
+  // no response as have accepted a >= proposal
 
 {"type":"prepare","proposal":3}
   -> {"type":"promised","proposal":3,"by":"me","max-accepted-proposal":2,"max-accepted-value":"value 2"}
