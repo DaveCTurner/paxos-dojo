@@ -218,3 +218,53 @@ also to track the greatest `$PROP` for which a `promised` message has been
 sent. This isn't enough information to handle all possible future messages, but
 in practice it works just fine. This is the recommended implementation.
 
+Here is an example of the expected behaviour, tracking just the greatest `$PROP` values:
+
+```javascript
+{"type":"prepare","proposal":2}
+  -> {"type":"promised","proposal":2,"by":"me"}
+  // NB no "max-accepted-proposal" or "max-accepted-value" as nothing accepted yet
+
+{"type":"prepare","proposal":1}
+  -> {"type":"promised","proposal":1,"by":"me"}
+  // ok to send out an earlier promise too
+
+{"type":"prepare","proposal":2}
+  -> {"type":"promised","proposal":2,"by":"me"}
+  // ok to send out a duplicate promise
+
+{"type":"proposed","proposal":1,"value":"value 1"}
+  // have promised not to accept proposals < 2 so do not respond to this
+
+{"type":"proposed","proposal":2,"value":"value 2"}
+  -> {"type":"accepted","proposal":2,"by":"me","value":"value 2"}
+  // ok to accept this proposal as it is >= 2 so consistent with all promises
+
+{"type":"prepare","proposal":1}
+  // no response as have accepted a >= proposaal
+
+{"type":"prepare","proposal":2}
+  // no response as have accepted a >= proposaal
+
+{"type":"prepare","proposal":3}
+  -> {"type":"promised","proposal":3,"by":"me","max-accepted-proposal":2,"max-accepted-value":"value 2"}
+  // send out a promise, but now includes "max-accepted-proposal" and "max-accepted-value"
+
+{"type":"proposed","proposal":4,"value":"value 4"}
+  -> {"type":"accepted","proposal":4,"by":"me","value":"value 4"}
+  // ok to accept this proposal as it is >= 3 so consistent with all promises
+
+{"type":"proposed","proposal":4,"value":"different value 4"}
+  // have already accepted proposal 4, so do not accept it again. Technically,
+  // could re-send:
+  //     {"type":"accepted","proposal":4,"by":"me","value":"value 4"}
+  // (NB the value must be what was originally accepted) but this is
+  // unnecessary and makes the implementation more complicated.
+
+{"type":"proposed","proposal":3,"value":"value 3"}
+  // have already accepted proposal 4, so do not accept earlier-numbered
+  // proposals. Technically, could send:
+  //     {"type":"accepted","proposal":3,"by":"me","value":"value 3"}
+  // as proposal 3 has not been accepted, but this is unnecessary and makes the
+  // implementation more complicated.
+```

@@ -81,7 +81,7 @@ acceptor (Left (Prepare proposalId)) = do
 acceptor (Right (Proposed proposalId value)) = do
   AcceptorState maybeMaxPromised promiseType <- get
   when (maybeMaxPromised <= Just proposalId) $ case promiseType of
-    Bound proposalId' _ | proposalId' <= proposalId -> error "TODO" -- return ()
+    Bound proposalId' _ | proposalId <= proposalId' -> return ()
     _ -> do
       myName <- ask
       tell [Right $ Accepted proposalId myName value]
@@ -95,6 +95,7 @@ main = hspec $ do
     ,(Accepted 2 "brian" "bar", [],      "should learn nothing from a duplicate of the previous message")
     ,(Accepted 2 "chris" "bar", ["bar"], "should learn a value from another message for proposal 2")
     ]
+
   describe "Proposer" $ proposerTest
     [(Promised 1 "alice" Free,                      [], "should propose nothing from the first message")
 
@@ -120,6 +121,7 @@ main = hspec $ do
     ,(Promised 6 "alice" (Bound 1 "alice's value"), [Proposed 6 "brian's value"],
                                 "should propose the value given in the first promise as it has the higher-numbered value")
     ]
+
   describe "Acceptor" $ acceptorTest
     [(Left $ Prepare 2, [Left $ Promised 2 "me" Free], "should emit a promise for the first message")
     ,(Left $ Prepare 1, [Left $ Promised 1 "me" Free], "should emit a promise for a lower-numbered proposal too")
@@ -130,6 +132,10 @@ main = hspec $ do
     ,(Left $ Prepare 2, [], "should not emit a promise now that a == proposal has been accepted")
     ,(Left $ Prepare 3, [Left $ Promised 3 "me" (Bound 2 "another value")],
         "should emit a promise for a > proposal")
+    ,(Right $ Proposed 4 "yet another value", [Right $ Accepted 4 "me" "yet another value"],
+        "should emit a promise for a > proposal")
+    ,(Right $ Proposed 4 "yet another value", [], "should not accept the same proposal again")
+    ,(Right $ Proposed 3 "yet another value", [], "should not accept an earlier proposal either")
     ]
 
 learnerTest :: [(AcceptedMessage, [String], String)] -> SpecWith ()
