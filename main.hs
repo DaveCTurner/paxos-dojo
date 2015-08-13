@@ -1,14 +1,21 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 
+import Network.HTTP.Client
+import Network.HTTP.Types
+import Data.Aeson hiding (Value)
+import Control.Applicative
+import Control.Concurrent
 import Test.Hspec
-import Data.Monoid
 import Data.List
-import Data.Maybe
+import Control.Exception
 import Control.Monad
 import Control.Monad.RWS
 import Control.Monad.Trans.Maybe
 import qualified Data.Set as S
+import qualified Data.ByteString.Lazy as BL
 import Data.Tuple.Utils
+import Text.Printf
 
 type ProposalId = Int
 type AcceptorId = String
@@ -88,7 +95,126 @@ acceptor (Right (Proposed proposalId value)) = do
       put $ AcceptorState maybeMaxPromised $ Bound proposalId value
 
 main :: IO ()
-main = hspec $ do
+main = do
+  logLock <- newMVar ()
+
+  forM_ ["alice", "brian", "chris"] $ forkIO . runAcceptor (AcceptorState Nothing Free)
+  forM_ [1..5] $ forkIO . runLearner (LearnerState []) logLock
+  forM_ [0..9] $ forkIO . runProposer (ProposerState S.empty [])
+
+  runLearner (LearnerState []) logLock 0
+
+getJSON :: FromJSON a => String -> IO a
+getJSON uri = do
+  manager <- newManager defaultManagerSettings
+  req <- parseUrl uri
+  runLoop req manager
+
+  where
+  runLoop req manager = do
+    maybeResult <- ignoringExceptions $ withResponse req manager $ \response -> decode . BL.fromChunks <$> brConsume (responseBody response)
+    maybe (threadDelay 3000000 >> runLoop req manager) return maybeResult
+
+postJSON :: ToJSON a => String -> a -> IO ()
+postJSON uri value = void $ ignoringExceptions $ do
+  manager <- newManager defaultManagerSettings
+  req <- parseUrl uri
+  withResponse req { method = methodPost, requestBody = RequestBodyLBS $ encode value } manager $ \_ -> return (Just ())
+
+ignoringExceptions :: IO (Maybe a) -> IO (Maybe a)
+ignoringExceptions
+  = handleWith (ignoreException :: IOException   -> ())
+  . handleWith (ignoreException :: HttpException -> ())
+  where
+  ignoreException = const ()
+  handleWith f = handle (const (return Nothing) . f)
+
+runLearner :: LearnerState -> MVar () -> Int -> IO a
+runLearner s0 logLock ident = go s0
+  where
+  uri = "http://127.0.0.1:24192/learner/" ++ show ident
+  go s = do
+    acceptedMessage <- getJSON uri
+    let ((),s',outputs) = runRWS (learner acceptedMessage) () s
+    forM_ outputs $ \learnedValue -> withMVar logLock $ \_
+      -> putStrLn $ printf "Learner %d learned value '%s'" ident learnedValue
+    go s'
+
+instance FromJSON AcceptedMessage where
+  parseJSON = withObject "AcceptedMessage" $ \o -> Accepted
+    <$> o .: "proposal"
+    <*> o .: "by"
+    <*> o .: "value"
+
+instance FromJSON PromisedMessage where
+  parseJSON = withObject "PromisedMessage" $ \o -> Promised
+    <$> o .: "proposal"
+    <*> o .: "by"
+    <*> ((Bound <$> o .: "max-accepted-proposal" <*> o .: "max-accepted-value") <|> pure Free)
+
+instance ToJSON ProposedMessage where
+  toJSON (Proposed proposalId value) = object
+    [ "type" .= ("proposed" :: String)
+    , "proposal" .= proposalId
+    , "value" .= value
+    ]
+
+runProposer :: ProposerState -> Int -> IO a
+runProposer s0 ident = go s0
+  where
+  uri = "http://127.0.0.1:24192/proposer/" ++ show ident
+  go s = do
+    promisedMessage <- getJSON uri
+    let ((),s',outputs) = runRWS (proposer promisedMessage) ("value from proposer " ++ show ident) s
+    forM_ outputs $ postJSON uri
+    go s'
+
+runAcceptor :: AcceptorState -> String -> IO a
+runAcceptor s0 ident = go s0
+  where
+  uri = "http://127.0.0.1:24192/acceptor/" ++ ident
+  go s = do
+    acceptorReceivedMessage <- getJSON uri
+    let msg' = case acceptorReceivedMessage of ARLeft m -> Left m; ARRight m -> Right m
+    let ((),s',outputs) = runRWS (acceptor msg') ident s
+    forM_ outputs $ postJSON uri . either ASLeft ASRight
+    go s'
+
+data AcceptorReceived = ARLeft PrepareMessage | ARRight ProposedMessage
+
+data AcceptorSent = ASLeft PromisedMessage | ASRight AcceptedMessage
+
+instance FromJSON AcceptorReceived where
+  parseJSON = withObject "AcceptorReceived" $ \o -> do
+    msgType <- o .: "type"
+    if msgType == ("prepare" :: String)
+      then ARLeft  <$> (Prepare <$> o .: "proposal")
+      else ARRight <$> (Proposed <$> o .: "proposal" <*> o .: "value")
+
+instance ToJSON AcceptorSent where
+  toJSON (ASLeft (Promised proposal acceptorId Free)) = object
+    [ "type" .= ("promised" :: String)
+    , "proposal" .= proposal
+    , "by" .= acceptorId
+    ]
+
+  toJSON (ASLeft (Promised proposal acceptorId (Bound proposal' value'))) = object
+    [ "type" .= ("promised" :: String)
+    , "proposal" .= proposal
+    , "by" .= acceptorId
+    , "max-accepted-proposal" .= proposal'
+    , "max-accepted-value" .= value'
+    ]
+
+  toJSON (ASRight (Accepted proposal acceptorId value)) = object
+    [ "type" .= ("accepted" :: String)
+    , "proposal" .= proposal
+    , "by" .= acceptorId
+    , "value" .= value
+    ]
+
+test :: IO ()
+test = hspec $ do
   describe "Learner" $ learnerTest
     [(Accepted 1 "alice" "foo", [],      "should learn nothing with the first message")
     ,(Accepted 2 "brian" "bar", [],      "should learn nothing with a message for a different proposal")
