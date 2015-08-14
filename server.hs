@@ -161,6 +161,19 @@ main = do
   withAsync (run 24192 $ \req respond -> do
     now <- getCurrentTime
     let queueName = rawPathInfo req
+
+        corsHeaders =
+          [("Access-Control-Allow-Origin", T.encodeUtf8 "*")
+          ,("Access-Control-Allow-Headers", T.encodeUtf8 "Content-Type")
+          ]
+
+        respondJson :: ToJSON a => a -> IO ResponseReceived
+        respondJson = respond . responseLBS ok200
+          ((hContentType, T.encodeUtf8 "application/json") : corsHeaders) . encode
+
+        respondEmpty      = respond $ responseLBS noContent204  corsHeaders mempty
+        respondBadRequest = respond $ responseLBS badRequest400 corsHeaders mempty
+
     case parseMethod $ requestMethod req of
       Right GET
         | queueName == "/status" -> do
@@ -169,15 +182,15 @@ main = do
               outgoingQueueByName <- readTVar outgoingQueueByNameVar
               Status <$> readTVar configVar
                      <*> forM (M.toList outgoingQueueByName)
-                  (\(queueName, (lastAccessTime, queue)) -> 
+                  (\(queueName, (lastAccessTime, queue)) ->
                     (,,) queueName lastAccessTime <$> isEmptyTQueue queue)
 
-            respond $ responseLBS ok200 [(hContentType, T.encodeUtf8 "application/json")] $ encode status
+            respondJson status
 
         | queueName == "/config" -> do
 
             config <- atomically $ readTVar configVar
-            respond $ responseLBS ok200 [(hContentType, T.encodeUtf8 "application/json")] $ encode config
+            respondJson config
 
         | otherwise -> do
 
@@ -192,34 +205,34 @@ main = do
             response <- timeout cGetTimeout $ atomically $ readTQueue theQueue
 
             case response of
-              Nothing -> respond $ responseBuilder noContent204 [] mempty
+              Nothing -> respondEmpty
               Just value -> do
                 let valueBytes = encode (value :: PaxosMessage)
                 responseTime <- getCurrentTime
                 logMessage responseTime queueName $ "GET  " ++ (T.unpack $ T.decodeUtf8 $ BL.toStrict valueBytes)
-                respond $ responseLBS ok200 [(hContentType, T.encodeUtf8 "application/json")] valueBytes
+                respondJson value
 
       Right POST
         | queueName == "/config" -> do
             body <- strictRequestBody req
             let maybeValue = decode body
             case maybeValue of
-              Nothing -> respond $ responseLBS badRequest400 [] mempty
+              Nothing -> respondBadRequest
               Just value -> do
                 atomically $ writeTVar configVar value
-                respond $ responseBuilder noContent204 [] mempty
+                respondEmpty
 
         | otherwise -> do
             body <- strictRequestBody req
             let maybeValue = decode body
             case maybeValue of
-              Nothing -> respond $ responseLBS badRequest400 [] mempty
+              Nothing -> respondBadRequest
               Just value -> do
                 logMessage now queueName $ "POST " ++ (T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode value)
                 atomically $ writeTQueue incomingQueue (queueName, now, value :: PaxosMessage)
-                respond $ responseBuilder noContent204 [] mempty
+                respondEmpty
 
-      _ -> respond $ responseLBS badRequest400 [] mempty)
+      _ -> respondEmpty)
 
 
 
