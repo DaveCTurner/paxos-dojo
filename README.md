@@ -402,3 +402,5 @@ TODO break down proposal ids - last digit is proposer id
 TODO altering the topology. topology version in proposal id.
 
 TODO stop working on an instance once value has been learned - discard associated data and ignore future messages. broadcast this. catch up.
+
+TODO combine modules into a single thing
