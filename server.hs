@@ -271,9 +271,13 @@ main = do
             <$> readTVar outgoingQueueByNameVar
         writeTVar outgoingQueueByNameVar activeQueuesMap
 
-        let isRelevantProposer proposalId = (== (T.encodeUtf8 ("/proposer/" <> T.pack (show (mod proposalId cProposerCount)))))
-            isAcceptor = B.isPrefixOf (T.encodeUtf8 "/acceptor/")
-            isLearner  = B.isPrefixOf (T.encodeUtf8 "/learner/")
+        let isRelevantProposer proposalId
+              = (`elem` [ T.encodeUtf8 (nodeType <> T.pack (show (mod proposalId cProposerCount)))
+                        | nodeType <- ["/proposer/", "/general/"]])
+
+            prefixIsOneOf prefixes qn = or [ B.isPrefixOf (T.encodeUtf8 prefix) qn | prefix <- prefixes ]
+            isAcceptor = prefixIsOneOf ["/acceptor/", "/general/"]
+            isLearner  = prefixIsOneOf ["/learner/",  "/general/"]
 
             shouldOutputTo = case value of
               Prepare  {}                      -> isAcceptor
