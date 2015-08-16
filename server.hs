@@ -254,7 +254,7 @@ main = do
               Nothing -> respondBadRequest
               Just value -> do
                 logMessage now queueName $ "POST " ++ (T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode value)
-                atomically $ writeTQueue incomingQueue (now, value :: PaxosMessage)
+                atomically $ writeTQueue incomingQueue (queueName, now, value :: PaxosMessage)
                 respondEmpty
 
       _ -> respondBadMethod)
@@ -263,7 +263,7 @@ main = do
 
     $ \_ -> forever $ join $ atomically $ do
 
-        (receivedTime, value) <- readTQueue incomingQueue
+        (incomingQueue, receivedTime, value) <- readTQueue incomingQueue
         Config{..} <- readTVar configVar
 
         let staleIfNotQueriedSince = addUTCTime (fromIntegral cQueueExpiry * negate 0.000001) receivedTime
@@ -289,6 +289,7 @@ main = do
 
             outputQueues = [ queue
                            | (queueName, (_, queue)) <- M.toList activeQueuesMap
+                           , queueName /= incomingQueue
                            , shouldOutputTo queueName ]
 
         return $ do
