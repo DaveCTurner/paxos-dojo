@@ -268,26 +268,19 @@ test = hspec $ do
     ]
 
 learnerTest :: [(AcceptedMessage, [String], String)] -> SpecWith ()
-learnerTest testSeq = forM_ (inits testSeq) $ \ioPairs ->
-  let inputs          =          map fst3 ioPairs
-      expectedOutputs = concat $ map snd3 ioPairs
-      worksAsExpected = last $ "should learn nothing from no messages" : map thd3 ioPairs
-      (_, _, outputs) = runRWS (mapM_ learner inputs) () (LearnerState [])
-  in it worksAsExpected $ outputs `shouldBe` expectedOutputs
+learnerTest = generalTest learner () (LearnerState [])
 
 proposerTest :: [(PromisedMessage, [ProposedMessage], String)] -> SpecWith ()
-proposerTest testSeq = forM_ (inits testSeq) $ \ioPairs ->
-  let inputs          =          map fst3 ioPairs
-      expectedOutputs = concat $ map snd3 ioPairs
-      worksAsExpected = last $ "should propose nothing from no messages" : map thd3 ioPairs
-      (_, _, outputs) = runRWS (mapM_ proposer inputs) "my value" (ProposerState S.empty [])
-  in it worksAsExpected $ outputs `shouldBe` expectedOutputs
+proposerTest = generalTest proposer "my value" (ProposerState S.empty [])
 
 acceptorTest :: [(Either PrepareMessage ProposedMessage, [Either PromisedMessage AcceptedMessage], String)] -> SpecWith ()
-acceptorTest testSeq = forM_ (inits testSeq) $ \ioPairs ->
+acceptorTest = generalTest acceptor "me" (AcceptorState Nothing Free)
+
+generalTest :: (Show output, Eq output)
+  => (input -> RWS env [output] state b) -> env -> state -> [(input, [output], String)] -> SpecWith ()
+generalTest stateMachine environment initialState testSeq = forM_ (inits testSeq) $ \ioPairs ->
   let inputs          =          map fst3 ioPairs
       expectedOutputs = concat $ map snd3 ioPairs
       worksAsExpected = last $ "should emit nothing from no messages" : map thd3 ioPairs
-      (_, _, outputs) = runRWS (mapM_ acceptor inputs) "me" (AcceptorState Nothing Free)
+      (_, _, outputs) = runRWS (mapM_ stateMachine inputs) environment initialState
   in it worksAsExpected $ outputs `shouldBe` expectedOutputs
-
