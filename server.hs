@@ -9,6 +9,7 @@ import Control.Concurrent.STM
 import Control.Concurrent.Timeout
 import Control.Monad
 import Data.Aeson hiding (Value)
+import Data.Aeson.Types (Pair)
 import Data.Monoid
 import Data.Time
 import Data.Time.ISO8601
@@ -23,16 +24,18 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 
+type InstanceId = Integer
 type ProposalId = Integer
 type AcceptorId = T.Text
 type Value      = T.Text
 
 data PaxosMessage
-  = Prepare       ProposalId
-  | FreePromised  ProposalId AcceptorId
-  | BoundPromised ProposalId AcceptorId ProposalId Value
-  | Proposed                            ProposalId Value
-  | Accepted                 AcceptorId ProposalId Value
+  = Prepare       (Maybe InstanceId) ProposalId
+  | MultiPromised        InstanceId  ProposalId AcceptorId
+  | FreePromised  (Maybe InstanceId) ProposalId AcceptorId
+  | BoundPromised (Maybe InstanceId) ProposalId AcceptorId ProposalId Value
+  | Proposed      (Maybe InstanceId)                       ProposalId Value
+  | Accepted      (Maybe InstanceId)            AcceptorId ProposalId Value
 
 data MessageType = PrepareType | PromisedType | ProposedType | AcceptedType
 
@@ -51,38 +54,51 @@ instance FromJSON MessageType where
     typesByName = M.fromList [("prepare", PrepareType), ("promised", PromisedType),
                              ("proposed", ProposedType), ("accepted", AcceptedType)]
 
+instanceIfJust :: Maybe InstanceId -> [Pair]
+instanceIfJust = maybe [] $ return . (.=) "instance"
+
 instance ToJSON PaxosMessage where
-  toJSON (Prepare proposalId) = object
+  toJSON (Prepare maybeInstance proposalId) = object $
     [ "type"     .= PrepareType
     , "proposal" .= proposalId
-    ]
+    ] ++ maybe []
+               (\i -> ["instance" .= i, "includes-greater-instances" .= True])
+               maybeInstance
 
-  toJSON (FreePromised proposalId acceptorId) = object
+  toJSON (MultiPromised instanceId proposalId acceptorId) = object
     [ "type"     .= PromisedType
     , "proposal" .= proposalId
     , "by"       .= acceptorId
+    , "instance" .= instanceId
+    , "includes-greater-instances" .= True
     ]
 
-  toJSON (BoundPromised proposalId acceptorId proposalId' value') = object
+  toJSON (FreePromised maybeInstance proposalId acceptorId) = object $
+    [ "type"     .= PromisedType
+    , "proposal" .= proposalId
+    , "by"       .= acceptorId
+    ] ++ instanceIfJust maybeInstance
+
+  toJSON (BoundPromised maybeInstance proposalId acceptorId proposalId' value') = object $
     [ "type"                  .= PromisedType
     , "proposal"              .= proposalId
     , "by"                    .= acceptorId
     , "max-accepted-proposal" .= proposalId'
     , "max-accepted-value"    .= value'
-    ]
+    ] ++ instanceIfJust maybeInstance
 
-  toJSON (Proposed proposalId value) = object
+  toJSON (Proposed maybeInstance proposalId value) = object $
     [ "type"     .= ProposedType
     , "proposal" .= proposalId
     , "value"    .= value
-    ]
+    ] ++ instanceIfJust maybeInstance
 
-  toJSON (Accepted acceptorId proposalId value) = object
+  toJSON (Accepted maybeInstance acceptorId proposalId value) = object $
     [ "type"     .= AcceptedType
     , "proposal" .= proposalId
     , "by"       .= acceptorId
     , "value"    .= value
-    ]
+    ] ++ instanceIfJust maybeInstance
 
 instance FromJSON PaxosMessage where
   parseJSON = withObject "PaxosMessage" $ \o -> do
@@ -90,15 +106,23 @@ instance FromJSON PaxosMessage where
         proposalId  = o .: "proposal"
         acceptorId  = o .: "by"
         value       = o .: "value"
+        maybeInstance = o .:? "instance"
     messageType >>= \case
-      PrepareType  -> Prepare  <$> proposalId
-      ProposedType -> Proposed <$> proposalId <*> value
-      AcceptedType -> Accepted <$> acceptorId <*> proposalId <*> value
+      PrepareType  -> Prepare  <$> maybeInstance <*> proposalId
+      ProposedType -> Proposed <$> maybeInstance <*> proposalId <*> value
+      AcceptedType -> Accepted <$> maybeInstance <*> acceptorId <*> proposalId <*> value
       PromisedType
-        ->  (BoundPromised <$> proposalId <*> acceptorId
+        ->  (BoundPromised
+                <$> maybeInstance
+                <*> proposalId
+                <*> acceptorId
                 <*> o .: "max-accepted-proposal"
                 <*> o .: "max-accepted-value")
-        <|> (FreePromised <$> proposalId <*> acceptorId)
+        <|> (MultiPromised
+                <$> o .: "instance"
+                <*> proposalId
+                <*> acceptorId)
+        <|> (FreePromised <$> maybeInstance <*> proposalId <*> acceptorId)
 
 data Config = Config
   { cGetTimeout     :: Integer
@@ -171,8 +195,9 @@ main = do
         respondJson = respond . responseLBS ok200
           ((hContentType, T.encodeUtf8 "application/json") : corsHeaders) . encode
 
-        respondEmpty      = respond $ responseLBS noContent204  corsHeaders mempty
-        respondBadRequest = respond $ responseLBS badRequest400 corsHeaders mempty
+        respondEmpty      = respond $ responseLBS noContent204        corsHeaders mempty
+        respondBadRequest = respond $ responseLBS badRequest400       corsHeaders mempty
+        respondBadMethod  = respond $ responseLBS methodNotAllowed405 corsHeaders mempty
 
     case parseMethod $ requestMethod req of
       Right GET
@@ -182,8 +207,8 @@ main = do
               outgoingQueueByName <- readTVar outgoingQueueByNameVar
               Status <$> readTVar configVar
                      <*> forM (M.toList outgoingQueueByName)
-                  (\(queueName, (lastAccessTime, queue)) ->
-                    (,,) queueName lastAccessTime <$> isEmptyTQueue queue)
+                  (\(queueName', (lastAccessTime, queue)) ->
+                    (,,) queueName' lastAccessTime <$> isEmptyTQueue queue)
 
             respondJson status
 
@@ -232,13 +257,13 @@ main = do
                 atomically $ writeTQueue incomingQueue (queueName, now, value :: PaxosMessage)
                 respondEmpty
 
-      _ -> respondEmpty)
+      _ -> respondBadMethod)
 
 
 
     $ \_ -> forever $ join $ atomically $ do
 
-        (queueName, receivedTime, value) <- readTQueue incomingQueue
+        (incomingQueue, receivedTime, value) <- readTQueue incomingQueue
         Config{..} <- readTVar configVar
 
         let staleIfNotQueriedSince = addUTCTime (fromIntegral cQueueExpiry * negate 0.000001) receivedTime
@@ -246,17 +271,25 @@ main = do
             <$> readTVar outgoingQueueByNameVar
         writeTVar outgoingQueueByNameVar activeQueuesMap
 
-        let isRelevantProposer proposalId = (== (T.encodeUtf8 ("/proposer/" <> T.pack (show (mod proposalId cProposerCount)))))
+        let isRelevantProposer proposalId
+              = (`elem` [ T.encodeUtf8 (nodeType <> T.pack (show (mod proposalId cProposerCount)))
+                        | nodeType <- ["/proposer/", "/general/"]])
+
+            prefixIsOneOf prefixes qn = or [ B.isPrefixOf (T.encodeUtf8 prefix) qn | prefix <- prefixes ]
+            isAcceptor = prefixIsOneOf ["/acceptor/", "/general/"]
+            isLearner  = prefixIsOneOf ["/learner/",  "/general/"]
 
             shouldOutputTo = case value of
-              Prepare  {} -> B.isPrefixOf (T.encodeUtf8 "/acceptor/")
-              Proposed {} -> B.isPrefixOf (T.encodeUtf8 "/acceptor/")
-              Accepted {} -> B.isPrefixOf (T.encodeUtf8 "/learner/")
-              FreePromised  proposalId _     -> isRelevantProposer proposalId
-              BoundPromised proposalId _ _ _ -> isRelevantProposer proposalId
+              Prepare  {}                      -> isAcceptor
+              Proposed {}                      -> isAcceptor
+              Accepted {}                      -> isLearner
+              MultiPromised _ proposalId _     -> isRelevantProposer proposalId
+              FreePromised  _ proposalId _     -> isRelevantProposer proposalId
+              BoundPromised _ proposalId _ _ _ -> isRelevantProposer proposalId
 
             outputQueues = [ queue
                            | (queueName, (_, queue)) <- M.toList activeQueuesMap
+                           , queueName /= incomingQueue
                            , shouldOutputTo queueName ]
 
         return $ do
