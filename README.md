@@ -29,6 +29,31 @@ its GET.
 
 Messages can be sent with a separate HTTP POST to the bus.
 
+
+<img src='diagrams/001-setup.png' />
+<img src='diagrams/002-prepare.png' />
+<img src='diagrams/003-promise.png' />
+<img src='diagrams/004-propose.png' />
+<img src='diagrams/005-accept.png' />
+<img src='diagrams/010-setup.png' />
+<img src='diagrams/011-prepare.png' />
+<img src='diagrams/012-promise.png' />
+<img src='diagrams/013-promise-failed.png' />
+<img src='diagrams/014-retry-prepare.png' />
+<img src='diagrams/015-promise-2.png' />
+<img src='diagrams/016-propose.png' />
+<img src='diagrams/017-accept.png' />
+<img src='diagrams/018-delayed-promise.png' />
+<img src='diagrams/019-delayed-propose.png' />
+<img src='diagrams/020-prepare.png' />
+<img src='diagrams/021-promise.png' />
+<img src='diagrams/022-propose.png' />
+<img src='diagrams/023-accept.png' />
+<img src='diagrams/024-retry-prepare.png' />
+<img src='diagrams/025-promise-2.png' />
+<img src='diagrams/026-propose-2.png' />
+<img src='diagrams/027-accept.png' />
+
 ## Module Descriptions
 
 This section describes what messages each module may send and receive.  Since
