@@ -25,8 +25,8 @@ actually discovered in the process of trying to prove that no such protocol
 could exist.
 
 Of course if things go _too_ wrong then you can't really hope to achieve
-anything. However, using this protocol the worst thing that can happen is that
-no agreement is reached, and this only happens while
+anything, but this protocol guarantees that the worst thing that can happen is
+that no agreement is reached, and this only happens while
 
 - the network is dropping too many messages
 - messages are being delayed too heavily in transit, or
@@ -34,9 +34,7 @@ no agreement is reached, and this only happens while
 
 All of these problems tend to be transient: networks are eventually fixed and
 failed modules are eventually replaced, and when the situation returns to
-normal the protocol carries on and reaches agreement. There is a theorem (known
-as the FLP Impossibility Theorem) which proves that it impossible to do any
-better than this.
+normal the protocol carries on and reaches agreement.
 
 The system is unreliable but not actively malicious:
 
@@ -110,7 +108,12 @@ never be reached, so don't be too cautious!
 
 ### Learner
 
-The Learner is the simplest module. It receives messages that look like this:
+The Learner is the simplest module. Roughly speaking, it collects messages
+indicating that certain values have been accepted and when it receives these
+messages from a majority of Acceptors (i.e. two of them) it learns that
+consensus has been reached.
+
+More precisely, it receives messages that look like this:
 
 ```javascript
 {"type":"accepted","timePeriod":$TIMEPERIOD,"by":$NAME,"value":$VALUE}
@@ -118,9 +121,9 @@ The Learner is the simplest module. It receives messages that look like this:
 
 It doesn't send any messages, but should report to the user when it has learned
 a value. It learns a value by receiving two messages for the same `$TIMEPERIOD`
-(an integer) but different `$NAME`s. In this case, the `$VALUE` of the two
-messages will always be the same, so it desn't matter which one you choose to
-report.
+(a positive integer) but different `$NAME`s (which are strings). In this case,
+the `$VALUE` of the two messages will always be the same, so it desn't matter
+which one you choose to report.
 
 A simple Learner implementation is to keep a list of all messages received and
 check each new message against all the items that are already in the list,
@@ -143,211 +146,211 @@ Here is an example of the expected behaviour:
   -> 'value 2' // value learned - same $TIMEPERIOD but different $NAME compared with previous message
 ```
 
-There can be as many Learners running as desired.
-
 ### Proposer
 
-The Proposer is the next simplest module. It has a constant string, `$MYVALUE`,
-which it would like all the Learners to learn. This string can be whatever you
-want as long as it does not change once the protocol has started. It is a good
-idea to include your names or a team identifier so you can track it.
+The Proposer is the next simplest module. Its job is to propose ideas for the
+name of our startup. It knows your idea, which we'll call `$MYVALUE` here.
+Roughly speaking, it proposes `$MYVALUE` if it hasn't receieved any other
+ideas, but in the interests of harmony it prefers to agree with other
+proposers' ideas when it hears about them. It also only makes proposals when
+they have a good chance of being accepted by a majority of Acceptors. It is, in
+short, a little bit of a wimp.
 
-It receives messages that look like one of these (which are sent by Acceptors):
+More precisely, it receives messages that look like one of these (which are
+sent by Acceptors):
 
 ```javascript
-{"type":"promised","proposal":$PROP,"by":$NAME}
-{"type":"promised","proposal":$PROP,"by":$NAME,"max-accepted-proposal":$MAXPROP,"max-accepted-value":$MAXVALUE}
+{"type":"promised","timePeriod":$TIMEPERIOD,"by":$NAME}
+{"type":"promised","timePeriod":$TIMEPERIOD,"by":$NAME,"lastAcceptedTimePeriod":$LATP,"lastAcceptedValue":$LAV}
 ```
 
-In other words, the `max-accepted-proposal` and `max-accepted-value` fields are
+In other words, the `lastAcceptedTimePeriod` and `lastAcceptedValue` fields are
 optional, but not independently: either both are present or both are absent.
 
-When it has received two of these `promised` messages for the same `$PROP` (an
-integer) with different `$NAME`s, it should respond with a message like this:
+When it has received two of these `promised` messages for the same
+`$TIMEPERIOD` (a positive integer) with different `$NAME`s (which are strings),
+it should respond with a message like this:
 
 ```javascript
-{"type":"proposed","proposal":$PROP,"value":$VALUE}
+{"type":"proposed","timePeriod":$TIMEPERIOD,"value":$VALUE}
 ```
 
-In this situation, `$VALUE` depends on the `$MAXVALUE` and `$MAXPROP` values in
+In this situation, `$VALUE` depends on the `$LATP` and `$LAV` values in
 the two `promised` messages as follows:
 
-- If neither message includes the `max-accepted-value` field then use
-  `$MYVALUE`, the constant string that you want everyone to learn.
+- If neither message includes these values then use `$MYVALUE`.
 
-- If just one of the `promised` messages includes the
-  `max-accepted-value:$MAXVALUE` field then use `$MAXVALUE`.
+- If just one of the `promised` messages includes these values then use its
+  `$LAV`.
 
-- If both of the `promised` messages include the `max-accepted-value:$MAXVALUE`
-  field then it is the `$MAXVALUE` of the message with the greater value of
-`$MAXPROP`. In the case of a tie, either will do.
+- If both of the `promised` messages include these values then use the most
+  recent `$LAV` (i.e. the one with the greater value for `$LATP`). In the case
+of a tie, either will do.
 
-It must only ever send out a single `proposed` message for each `$PROP`.
+It must only ever send out a single `proposed` message for each `$TIMEPERIOD`.
 
 A simple Proposer implementation is to keep
 
 - a list of all messages received, and
-- a list of all `$PROP` values for which `proposed` messages have been sent.
+- the latest `$TIMEPERIOD` for which a `proposed` message have been sent.
 
-When a new message is received, ignore it if its `$PROP` value appears in the
-already-sent list and otherwise check it against all the other received
-messages.  If any of them match on `$PROP` but not on `$NAME` then send a
-`proposed` message with `$VALUE` calculated as described above.
+When a new message is received, ignore it if its `$TIMEPERIOD` value is no
+greater than the latest-proposed `$TIMEPERIOD` and otherwise check it against
+all the other received messages. If any of them match on `$TIMEPERIOD` but not
+on `$NAME` then take the first one and send a `proposed` message with `$VALUE`
+calculated as described above.
 
 Here is an example of the expected behaviour:
 
 ```javascript
-{"type":"promised","proposal":1,"by":"alice"}
+{"type":"promised","timePeriod":1,"by":"alice"}
   // nothing proposed - no previous messages
 
-{"type":"promised","proposal":2,"by":"brian"}
-  // nothing proposed - different $PROP from previous message
+{"type":"promised","timePeriod":2,"by":"brian"}
+  // nothing proposed - different $TIMEPERIOD from previous message
 
-{"type":"promised","proposal":2,"by":"brian"}
-  // nothing proposed - different $PROP from or same $NAME as previos messages
+{"type":"promised","timePeriod":2,"by":"brian"}
+  // nothing proposed - different $TIMEPERIOD from first message and same $NAME as second message
 
-{"type":"promised","proposal":2,"by":"chris"}
-  -> {"type":"proposed","proposal":2,"value":"my value"}
-  // proposal made using $MYVALUE as no max-accepted-value field in any promises
+{"type":"promised","timePeriod":2,"by":"chris"}
+  -> {"type":"proposed","timePeriod":2,"value":"my awesome startup name"}
+  // proposal made using $MYVALUE as no $LAV given in any promises
 
-{"type":"promised","proposal":2,"by":"alice"}
-  // nothing proposed - proposal 2 has already been made
+{"type":"promised","timePeriod":2,"by":"alice"}
+  // nothing proposed - have already made a proposal for time period 2
 
-{"type":"promised","proposal":3,"by":"brian"}
-  // nothing proposed - new promise for proposal 3
+{"type":"promised","timePeriod":3,"by":"brian"}
+  // nothing proposed - different $TIMEPERIOD from all earlier messages
 
-{"type":"promised","proposal":3,"by":"alice","max-accepted-proposal":1,"max-accepted-value":"alice's value"}
-  -> {"type":"proposed","proposal":3,"value":"alice's value"}
-  // proposal made using value from Alice's promise as it included a max-accepted-value field
+{"type":"promised","timePeriod":3,"by":"alice","lastAcceptedTimePeriod":1,"lastAcceptedValue":"AliceCo"}
+  -> {"type":"proposed","timePeriod":3,"value":"AliceCo"}
+  // proposal made using $LAV from Alice's promise as it included a lastAcceptedValue field
 
-{"type":"promised","proposal":4,"by":"alice","max-accepted-proposal":1,"max-accepted-value":"alice's value"}
-  // nothing proposed - new promise for proposal 4
+{"type":"promised","timePeriod":4,"by":"alice","lastAcceptedTimePeriod":1,"lastAcceptedValue":"AliceCo"}
+  // nothing proposed - different $TIMEPERIOD from all earlier messages
 
-{"type":"promised","proposal":4,"by":"brian"}
-  -> {"type":"proposed","proposal":4,"value":"alice's value"}
-  // proposal made using value from Alice's promise as it included a max-accepted-value field
+{"type":"promised","timePeriod":4,"by":"brian"}
+  -> {"type":"proposed","timePeriod":4,"value":"AliceCo"}
+  // proposal made using $LAV from Alice's promise as it included a lastAcceptedValue field
 
-{"type":"promised","proposal":5,"by":"alice","max-accepted-proposal":1,"max-accepted-value":"alice's value"}
-  // nothing proposed - new promise for proposal 5
+{"type":"promised","timePeriod":5,"by":"alice","lastAcceptedTimePeriod":1,"lastAcceptedValue":"AliceCo"}
+  // nothing proposed - different $TIMEPERIOD from all earlier messages
 
-{"type":"promised","proposal":5,"by":"brian","max-accepted-proposal":2,"max-accepted-value":"brian's value"}
-  -> {"type":"proposed","proposal":5,"value":"brian's value"}
-  // proposal made using value from Brian's promise as it had the greater value for max-accepted-proposal
+{"type":"promised","timePeriod":5,"by":"brian","lastAcceptedTimePeriod":2,"lastAcceptedValue":"BrianCo"}
+  -> {"type":"proposed","timePeriod":5,"value":"BrianCo"}
+  // proposal made using $LAV from Brian's promise as it has the greater $LATP (so is fresher than Alice's)
 
-{"type":"promised","proposal":6,"by":"brian","max-accepted-proposal":2,"max-accepted-value":"brian's value"}
-  // nothing proposed - new promise for proposal 6
+{"type":"promised","timePeriod":6,"by":"brian","lastAcceptedTimePeriod":2,"lastAcceptedValue":"BrianCo"}
+  // nothing proposed - different $TIMEPERIOD from all earlier messages
 
-{"type":"promised","proposal":6,"by":"alice","max-accepted-proposal":1,"max-accepted-value":"alice's value"}
-  -> {"type":"proposed","proposal":6,"value":"brian's value"}
-  // proposal made using value from Brian's promise as it had the greater value for max-accepted-proposal
+{"type":"promised","timePeriod":6,"by":"alice","lastAcceptedTimePeriod":1,"lastAcceptedValue":"AliceCo"}
+  -> {"type":"proposed","timePeriod":6,"value":"brian's value"}
+  // proposal made using $LAV from Brian's promise as it has the greater $LATP (so is fresher than Alice's)
 ```
 
 ### Acceptor
 
 The Acceptor is the most complicated module. It has a name, `$NAME` (one of
 `"alice"`, `"brian"` or `"chris"`) which will be agreed in advance as it must
-not clash with that of the other Acceptors. It should include this name in the
+not clash with that of the other Acceptors. It must include its name in the
 `by` field of any messages it sends.
 
 It receives two kinds of message:
 
 ```javascript
-{"type":"prepare","proposal":$PROP}
-{"type":"proposed","proposal":$PROP,"value":$VALUE}
+{"type":"prepare","timePeriod":$TIMEPERIOD}
+{"type":"proposed","timePeriod":$TIMEPERIOD,"value":$VALUE}
 ```
+
+The `prepare` message comes from the Nag and indicates the start of a new time
+period. The `proposed` message comes from a Proposer and proposes a value for
+the given time period.
 
 Under the conditions set out below it may respond to these with:
 
 ```javascript
 // in response to a 'prepare':
-{"type":"promised","proposal":$PROP,"by":$NAME}
-{"type":"promised","proposal":$PROP,"by":$NAME,"max-accepted-proposal":$MAXPROP,"max-accepted-value":$MAXVALUE}
+{"type":"promised","timePeriod":$TIMEPERIOD,"by":$NAME}
+{"type":"promised","timePeriod":$TIMEPERIOD,"by":$NAME,"lastAcceptedTimePeriod":$LATP,"lastAcceptedValue":$LAV}
 
 // in response to a 'proposed':
-{"type":"accepted","proposal":$PROP,"by":$NAME,"value":$VALUE}
+{"type":"accepted","timePeriod":$TIMEPERIOD,"by":$NAME,"value":$VALUE}
 ```
 
-A `promised` message is sent in response to the receipt of a `prepare` message.
-The values of `$MAXPROP` and `$MAXVALUE` are calculated by considering the
-`accepted` messages that have already been sent with a (strictly) smaller
-`$PROP` value:
+Throughout, `$TIMEPERIOD` and `$LATP` are positive integers, and all other
+values are strings.
 
-- If no such `accepted` message has been sent, the `max-accepted-proposal` and
-  `max-accepted-value` fields must be omitted.
+When it receives a `prepare` message the Acceptor should compare it to the last
+`accepted` message it sent:
 
-- If at least one `accepted` message has been sent, then `$MAXPROP` must be the
-  greatest `$PROP` from such a message, and `$MAXVALUE` must be the
-corresponding `$VALUE`.
+- If it has not yet sent any `accepted` messages, it should respond with a
+  `promised` message without the `lastAccepted*` fields.
 
-An `accepted` message is sent in response to the receipt of a `proposed`
-message as long as no `promised` message has already been sent with a
-(strictly) greater `$PROP` value.
+- If the last `accepted` message was sent in a _strictly_ earlier time period
+  than the `prepare` message's `$TIMEPERIOD` then it should respond with a
+`promised` message with the `lastAccepted*` fields, where `$LAV` and `$LATP`
+are respectively set to the `$VALUE` and `$TIMEPERIOD` of the last `accepted`
+message.
 
-The `proposed` message comes from one of the Proposers, and the `prepare`
-message comes from a separate module, called the Nag, which simply sends out
-`prepare` messages periodically, with increasing `$PROP` values. The Nag
-ensures that consensus is reached as long as the network is eventually
-reliable.
+- If the last `accepted` message was sent in an equal or later time period than
+  the `prepare` message's `$TIMEPERIOD` then no `promised` message is sent.
 
-The obvious Acceptor implementation is to track all sent messages and apply the
-logic described above when handling a newly-received message.
+The purpose of the `promised` message is to indicate that this Acceptor will no
+longer accept any proposals from earlier time periods.
 
-It is actually enough just to track the greatest `$PROP` for which an
-`accepted` message has been sent (along with the corresponding `$VALUE`) and
-also to track the greatest `$PROP` for which a `promised` message has been
-sent. This isn't enough information to handle all possible future messages, but
-in practice it works just fine. This is the recommended implementation.
+When it receives a `proposed` message, it may respond with a corresponding
+`accepted` message as long as
 
-Here is an example of the expected behaviour, tracking just the greatest
-`$PROP` values:
+- doing so does not break any previous promises (i.e. it has not sent a
+  `promised` message for a strictly later time period)
+- doing so does not clash with any previous acceptances (i.e. all `accepted`
+  messages sent so far were for strictly earlier time periods)
+
+A simple Acceptor implementation is to track the greatest `$TIMEPERIOD` for
+which an `accepted` message has been sent (along with the corresponding
+`$VALUE`) and also to track the greatest `$TIMEPERIOD` for which a `promised`
+message has been sent. Here is an example of the expected behaviour:
 
 ```javascript
-{"type":"prepare","proposal":2}
-  -> {"type":"promised","proposal":2,"by":"me"}
-  // NB no "max-accepted-proposal" or "max-accepted-value" as nothing accepted yet
+{"type":"prepare","timePeriod":2}
+  -> {"type":"promised","timePeriod":2,"by":"me"}
+  // NB no "lastAccepted*" as nothing accepted yet
 
-{"type":"prepare","proposal":1}
-  -> {"type":"promised","proposal":1,"by":"me"}
+{"type":"prepare","timePeriod":1}
+  -> {"type":"promised","timePeriod":1,"by":"me"}
   // ok to send out an earlier promise too
 
-{"type":"prepare","proposal":2}
-  -> {"type":"promised","proposal":2,"by":"me"}
+{"type":"prepare","timePeriod":2}
+  -> {"type":"promised","timePeriod":2,"by":"me"}
   // ok to send out a duplicate promise
 
-{"type":"proposed","proposal":1,"value":"value 1"}
-  // have promised not to accept proposals < 2 so do not respond to this
+{"type":"proposed","timePeriod":1,"value":"value 1"}
+  // have promised not to accept proposals from time periods before 2 so do not respond to this
 
-{"type":"proposed","proposal":2,"value":"value 2"}
-  -> {"type":"accepted","proposal":2,"by":"me","value":"value 2"}
-  // ok to accept this proposal as it is >= 2 so consistent with all promises
+{"type":"proposed","timePeriod":2,"value":"value 2"}
+  -> {"type":"accepted","timePeriod":2,"by":"me","value":"value 2"}
+  // ok to accept this proposal as it is consistent with all promises: it is not in a time period before 2
 
-{"type":"prepare","proposal":1}
-  // no response as have accepted a >= proposal
+{"type":"prepare","timePeriod":1}
+  // last accepted message was sent in a later time period, so no response
 
-{"type":"prepare","proposal":2}
-  // no response as have accepted a >= proposal
+{"type":"prepare","timePeriod":2}
+  // last accepted message was sent in this time period, so no response
 
-{"type":"prepare","proposal":3}
-  -> {"type":"promised","proposal":3,"by":"me","max-accepted-proposal":2,"max-accepted-value":"value 2"}
-  // send out a promise, but now includes "max-accepted-proposal" and "max-accepted-value"
+{"type":"prepare","timePeriod":3}
+  -> {"type":"promised","timePeriod":3,"by":"me","lastAcceptedTimePeriod":2,"lastAcceptedValue":"value 2"}
+  // send out a promise, but now includes "lastAccepted*" fields
 
-{"type":"proposed","proposal":4,"value":"value 4"}
-  -> {"type":"accepted","proposal":4,"by":"me","value":"value 4"}
-  // ok to accept this proposal as it is >= 3 so consistent with all promises
+{"type":"proposed","timePeriod":4,"value":"value 4"}
+  -> {"type":"accepted","timePeriod":4,"by":"me","value":"value 4"}
+  // ok to accept this proposal as it is from time period >= 3 so consistent with all promises
 
-{"type":"proposed","proposal":4,"value":"different value 4"}
-  // have already accepted proposal 4, so do not accept it again. Technically,
-  // could re-send:
-  //     {"type":"accepted","proposal":4,"by":"me","value":"value 4"}
-  // (NB the value must be what was originally accepted) but this is
-  // unnecessary and makes the implementation more complicated.
+{"type":"proposed","timePeriod":4,"value":"different value 4"}
+  // have already accepted proposal 4, so do not accept it again.
 
-{"type":"proposed","proposal":3,"value":"value 3"}
+{"type":"proposed","timePeriod":3,"value":"value 3"}
   // have already accepted proposal 4, so do not accept earlier-numbered
-  // proposals. Technically, could send:
-  //     {"type":"accepted","proposal":3,"by":"me","value":"value 3"}
-  // as proposal 3 has not been accepted, but this is unnecessary and makes the
-  // implementation more complicated.
+  // proposals.
 ```
 
 ### Comms details TODO
