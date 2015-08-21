@@ -97,9 +97,9 @@ Learner fails.
 
 ## Module Descriptions
 
-The modules communicate with each other using JSON-formatted messages for the
-sake of interoperatibility. This section gives the details of the messages each
-module may send and receive.
+For the sake of interoperability, in our implementation the modules communicate
+with each other using JSON-formatted messages. This section gives the details
+of the messages each module may send and receive.
 
 Since the protocol continues to work even if some messages are lost, it is ok
 for modules to choose to ignore a received message, and not to send a message
