@@ -25,17 +25,17 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 
 type InstanceId = Integer
-type ProposalId = Integer
+type TimePeriod = Integer
 type AcceptorId = T.Text
 type Value      = T.Text
 
 data PaxosMessage
-  = Prepare       (Maybe InstanceId) ProposalId
-  | MultiPromised        InstanceId  ProposalId AcceptorId
-  | FreePromised  (Maybe InstanceId) ProposalId AcceptorId
-  | BoundPromised (Maybe InstanceId) ProposalId AcceptorId ProposalId Value
-  | Proposed      (Maybe InstanceId)                       ProposalId Value
-  | Accepted      (Maybe InstanceId)            AcceptorId ProposalId Value
+  = Prepare       (Maybe InstanceId) TimePeriod
+  | MultiPromised        InstanceId  TimePeriod AcceptorId
+  | FreePromised  (Maybe InstanceId) TimePeriod AcceptorId
+  | BoundPromised (Maybe InstanceId) TimePeriod AcceptorId TimePeriod Value
+  | Proposed      (Maybe InstanceId)                       TimePeriod Value
+  | Accepted      (Maybe InstanceId)            AcceptorId TimePeriod Value
 
 data MessageType = PrepareType | PromisedType | ProposedType | AcceptedType
 
@@ -58,71 +58,72 @@ instanceIfJust :: Maybe InstanceId -> [Pair]
 instanceIfJust = maybe [] $ return . (.=) "instance"
 
 instance ToJSON PaxosMessage where
-  toJSON (Prepare maybeInstance proposalId) = object $
-    [ "type"     .= PrepareType
-    , "proposal" .= proposalId
+  toJSON (Prepare maybeInstance timePeriod) = object $
+    [ "type"       .= PrepareType
+    , "timePeriod" .= timePeriod
     ] ++ maybe []
-               (\i -> ["instance" .= i, "includes-greater-instances" .= True])
+               (\i -> ["instance" .= i, "includesGreaterInstances" .= True])
                maybeInstance
 
-  toJSON (MultiPromised instanceId proposalId acceptorId) = object
-    [ "type"     .= PromisedType
-    , "proposal" .= proposalId
-    , "by"       .= acceptorId
-    , "instance" .= instanceId
-    , "includes-greater-instances" .= True
+  toJSON (MultiPromised instanceId timePeriod acceptorId) = object
+    [ "type"       .= PromisedType
+    , "timePeriod" .= timePeriod
+    , "by"         .= acceptorId
+    , "instance"   .= instanceId
+    , "includesGreaterInstances" .= True
     ]
 
-  toJSON (FreePromised maybeInstance proposalId acceptorId) = object $
-    [ "type"     .= PromisedType
-    , "proposal" .= proposalId
-    , "by"       .= acceptorId
+  toJSON (FreePromised maybeInstance timePeriod acceptorId) = object $
+    [ "type"       .= PromisedType
+    , "timePeriod" .= timePeriod
+    , "by"         .= acceptorId
     ] ++ instanceIfJust maybeInstance
 
-  toJSON (BoundPromised maybeInstance proposalId acceptorId proposalId' value') = object $
-    [ "type"                  .= PromisedType
-    , "proposal"              .= proposalId
-    , "by"                    .= acceptorId
-    , "max-accepted-proposal" .= proposalId'
-    , "max-accepted-value"    .= value'
+  toJSON (BoundPromised maybeInstance timePeriod acceptorId timePeriod' value') = object $
+    [ "type"                   .= PromisedType
+    , "timePeriod"             .= timePeriod
+    , "by"                     .= acceptorId
+    , "lastAcceptedTimePeriod" .= timePeriod'
+    , "lastAcceptedValue"      .= value'
     ] ++ instanceIfJust maybeInstance
 
-  toJSON (Proposed maybeInstance proposalId value) = object $
-    [ "type"     .= ProposedType
-    , "proposal" .= proposalId
-    , "value"    .= value
+  toJSON (Proposed maybeInstance timePeriod value) = object $
+    [ "type"       .= ProposedType
+    , "timePeriod" .= timePeriod
+    , "value"      .= value
     ] ++ instanceIfJust maybeInstance
 
-  toJSON (Accepted maybeInstance acceptorId proposalId value) = object $
-    [ "type"     .= AcceptedType
-    , "proposal" .= proposalId
-    , "by"       .= acceptorId
-    , "value"    .= value
+  toJSON (Accepted maybeInstance acceptorId timePeriod value) = object $
+    [ "type"       .= AcceptedType
+    , "timePeriod" .= timePeriod
+    , "by"         .= acceptorId
+    , "value"      .= value
     ] ++ instanceIfJust maybeInstance
 
 instance FromJSON PaxosMessage where
   parseJSON = withObject "PaxosMessage" $ \o -> do
     let messageType = o .: "type"
-        proposalId  = o .: "proposal"
+        timePeriod  = o .: "timePeriod"
         acceptorId  = o .: "by"
         value       = o .: "value"
         maybeInstance = o .:? "instance"
     messageType >>= \case
-      PrepareType  -> Prepare  <$> maybeInstance <*> proposalId
-      ProposedType -> Proposed <$> maybeInstance <*> proposalId <*> value
-      AcceptedType -> Accepted <$> maybeInstance <*> acceptorId <*> proposalId <*> value
+      PrepareType  -> Prepare  <$> maybeInstance <*> timePeriod
+      ProposedType -> Proposed <$> maybeInstance <*> timePeriod <*> value
+      AcceptedType -> Accepted <$> maybeInstance <*> acceptorId <*> timePeriod <*> value
       PromisedType
         ->  (BoundPromised
                 <$> maybeInstance
-                <*> proposalId
+                <*> timePeriod
                 <*> acceptorId
-                <*> o .: "max-accepted-proposal"
-                <*> o .: "max-accepted-value")
+                <*> o .: "lastAcceptedTimePeriod"
+                <*> o .: "lastAcceptedValue")
         <|> (MultiPromised
                 <$> o .: "instance"
-                <*> proposalId
-                <*> acceptorId)
-        <|> (FreePromised <$> maybeInstance <*> proposalId <*> acceptorId)
+                <*> timePeriod
+                <*> acceptorId) -- TODO need to check the includesGreatestInstances field
+        <|> (FreePromised <$> maybeInstance <*> timePeriod <*> acceptorId)
+        -- TODO worth checking there are no other fields
 
 data Config = Config
   { cGetTimeoutSec  :: Integer
@@ -294,8 +295,8 @@ main = do
             <$> readTVar outgoingQueueByNameVar
         writeTVar outgoingQueueByNameVar activeQueuesMap
 
-        let isRelevantProposer proposalId
-              = (`elem` [ T.encodeUtf8 (nodeType <> T.pack (show (mod proposalId cProposerCount)))
+        let isRelevantProposer timePeriod
+              = (`elem` [ T.encodeUtf8 (nodeType <> T.pack (show (mod timePeriod cProposerCount)))
                         | nodeType <- ["/proposer/", "/general/"]])
 
             prefixIsOneOf prefixes qn = or [ B.isPrefixOf (T.encodeUtf8 prefix) qn | prefix <- prefixes ]
@@ -306,9 +307,9 @@ main = do
               Prepare  {}                      -> isAcceptor
               Proposed {}                      -> isAcceptor
               Accepted {}                      -> isLearner
-              MultiPromised _ proposalId _     -> isRelevantProposer proposalId
-              FreePromised  _ proposalId _     -> isRelevantProposer proposalId
-              BoundPromised _ proposalId _ _ _ -> isRelevantProposer proposalId
+              MultiPromised _ timePeriod _     -> isRelevantProposer timePeriod
+              FreePromised  _ timePeriod _     -> isRelevantProposer timePeriod
+              BoundPromised _ timePeriod _ _ _ -> isRelevantProposer timePeriod
 
             outputQueues = [ queue
                            | (queueName, (_, queue)) <- M.toList activeQueuesMap
