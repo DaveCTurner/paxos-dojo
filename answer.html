@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script type='text/javascript'>
+
+function runModule(url, cb) {
+  var respond = function(message) {
+    var req = new XMLHttpRequest();
+    req.open('POST', url);
+    req.setRequestHeader('Content-type', 'application/json');
+    req.send(JSON.stringify(message));
+  }
+
+  var req = new XMLHttpRequest();
+  req.onreadystatechange = function() {
+    if (req.readyState != 4) {
+      return;
+    }
+
+    var isHttpSuccess = 200 <= req.status && req.status <= 299;
+    setTimeout(function() { runModule(url, cb) }, isHttpSuccess ? 0 : 2000);
+
+    if (req.status == 200) {
+      cb(JSON.parse(req.responseText), respond);
+    }
+  }
+  req.open('GET', url);
+  req.send();
+}
+
+learnerReceived = [];
+
+runModule('http://localhost:8080/paxos/learner/5', function(currMessage, respond) {
+  console.log('learner currMessage: ' + JSON.stringify(currMessage));
+
+  var haveLearned = false;
+  learnerReceived.forEach(function(prevMessage) {
+    if (!haveLearned && currMessage.proposal === prevMessage.proposal && currMessage.by != prevMessage.by) {
+      console.log('learned value: \'' + currMessage.value + '\'');
+      haveLearned = true;
+    }
+  });
+
+  learnerReceived.push(currMessage);
+});
+
+proposerReceived = [];
+maxProposed = 0;
+
+runModule('http://localhost:8080/paxos/proposer/1', function(currMessage, respond) {
+  console.log('proposer currMessage: ' + JSON.stringify(currMessage));
+  proposerReceived.push(currMessage);
+
+  if (currMessage.proposal <= maxProposed) { return; }
+
+  var haveProposed = false;
+  proposerReceived.forEach(function(prevMessage) {
+    if (haveProposed) { return; }
+    if (currMessage.proposal != prevMessage.proposal) { return; }
+    if (currMessage.by == prevMessage.by) { return; }
+
+    var proposedValue = "Value from proposer 1";
+
+    if (currMessage['max-accepted-proposal']) {
+      if (prevMessage['max-accepted-proposal']) {
+        if (currMessage['max-accepted-proposal'] > prevMessage['max-accepted-proposal']) {
+          proposedValue = currMessage['max-accepted-value'];
+        } else {
+          proposedValue = prevMessage['max-accepted-value'];
+        }
+      } else {
+        proposedValue = currMessage['max-accepted-value'];
+      }
+    } else if (prevMessage['max-accepted-proposal']) {
+        proposedValue = prevMessage['max-accepted-value'];
+    }
+
+    respond({'type':'proposed','proposal':currMessage.proposal,'value':proposedValue});
+    maxProposed = currMessage.proposal
+    haveProposed = true;
+  });
+
+  proposerReceived.push(currMessage);
+
+});
+
+maxAccepted = -1;
+maxAcceptedValue = '';
+maxPromised = -1;
+
+runModule('http://localhost:8080/paxos/acceptor/brian', function(currMessage, respond) {
+  console.log('acceptor currMessage: ' + JSON.stringify(currMessage));
+
+  if (currMessage.type === 'prepare') {
+    if (currMessage.proposal <= maxAccepted) { return; }
+    
+    if (maxAccepted < 0) {
+      respond({'type':'promised','proposal':currMessage.proposal,'by':'brian'});
+    } else {
+      respond({'type':'promised','proposal':currMessage.proposal,'by':'brian','max-accepted-value':maxAcceptedValue,'max-accepted-proposal':maxAccepted});
+    }
+    
+    if (currMessage.proposal > maxPromised) { maxPromised = currMessage.proposal; }
+  
+  } else if (currMessage.type === 'proposed') {
+    if (currMessage.proposal < maxPromised) { return; }
+    if (currMessage.proposal < maxAccepted) { return; }
+    respond({'type':'accepted','proposal':currMessage.proposal,'by':'brian','value':currMessage.value});
+
+    maxAccepted = currMessage.proposal;
+    maxAcceptedValue = currMessage.value;
+  }
+  
+});
+
+</script>
+</head>
+<body>
+Go and look at the JS console.
+</body>
+</html>
+
