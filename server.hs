@@ -200,6 +200,9 @@ main = do
         respondBadMethod  = respond $ responseLBS methodNotAllowed405 corsHeaders mempty
 
     case parseMethod $ requestMethod req of
+      Right OPTIONS -> respond $ responseLBS noContent204
+          (("Allow", T.encodeUtf8 "GET,POST,OPTIONS"): corsHeaders) mempty
+
       Right GET
         | queueName == "/status" -> do
 
