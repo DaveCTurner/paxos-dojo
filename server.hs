@@ -196,7 +196,7 @@ main = do
 
         respondJson :: ToJSON a => a -> IO ResponseReceived
         respondJson = respond . responseLBS ok200
-          ((hContentType, T.encodeUtf8 "application/json") : corsHeaders) . encode
+          ((hContentType, T.encodeUtf8 "application/json; charset=utf-8") : corsHeaders) . encode
 
         respondEmpty      = respond $ responseLBS noContent204        corsHeaders mempty
         respondBadRequest = respond $ responseLBS badRequest400       corsHeaders mempty
