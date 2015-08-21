@@ -63,35 +63,36 @@ Nag broadcasts the current time period to the Acceptors:
 
 <img src='diagrams/002-prepare.png' width='400px' />
 
-When each Acceptor receives this broadcast, it sends a `promised` message to
-the Proposer, promising that in future it won't accept any proposals made
-before the current time period.
+When each Acceptor receives this broadcast, it sends a message to the Proposer,
+promising that in future it won't accept any proposals made before the current
+time period.
 
 <img src='diagrams/003-promise.png' width='400px' />
 
-When the Proposer receives these `promised` messages from a majority of
+When the Proposer receives these promises messages from a majority of
 Acceptors (i.e. two of them), it proposes a value to agree upon in the current
-time period by broadcasting a `proposed` message back to all the Acceptors.
+time period by broadcasting a message back to all the Acceptors.
 
 <img src='diagrams/004-propose.png' width='400px' />
 
 Since the Acceptors have not made any further promises, they all accept the
-proposed value and send `accepted` messages to the Learner. Once the Learner
-receives two such `accepted` messages for the same time period, it has learned
-that this value is the one that the system has agreed upon.
+proposed value by sendin messages to the Learner. Once the Learner receives
+these messages for the same time period from a majority of Acceptors (i.e. two
+of them), it has learned that this value is the one that the system has agreed
+upon.
 
 <img src='diagrams/005-accept.png' width='400px' />
 
-There has to be exactly three Acceptors, but it's much more interesting if
-there is more than one Learner and Proposer:
+There has to be exactly three Acceptors but there can be as many Learners and
+Proposers as desired. It's much more interesting if there are more than one of
+each:
 
-- With one Proposer there is only one value to be proposed (so eventual
-  consensus is guaranteed) and the system will stop working if this Proposer
-fails.
+- With one Proposer there is only one value to be proposed (so inconsistency is
+  impossible) and the system will stop working if this Proposer fails.
 
 - With one Learner there is only one place where a value is learned (so
-  eventual consensus is guaranteed) and the system will stop working if this
-Learner fails.
+  inconsistency is impossible) and the system will stop working if this Learner
+fails.
 
 ## Module Descriptions
 
@@ -353,288 +354,176 @@ message has been sent. Here is an example of the expected behaviour:
   // proposals.
 ```
 
-### Comms details TODO
+### Comms details
 
-The modules will communicate via a central bus running in the cloud. Performing
-a HTTP GET will return a JSON-formatted message, if one is available. If not,
-the bus will wait for a while to see if one becomes available, and eventually
-return `204 No Content` if the wait is fruitless. The module should then retry
-its GET. Messages can be sent with a separate HTTP POST to the bus.
+For the sake of simplicity, the modules will communicate with one another via a
+HTTP messaging system running on the internet. Each team will get their own URL
+for accessing the messaging system.
 
-TODO Links to example code for interfacing with the bus.
+To get a pending message, perform a HTTP GET to your URL. If there is a message
+waiting for you, it will immediately be returned with status `200 OK`. If there
+are no messages then the GET will wait for a while to see if one turns up.
+Eventually, it will return `204 No Content` if the wait was fruitless. You can
+immediately retry the request at this point.
 
-### Protocol Flows
+To send a message, perform a HTTP POST to your URL with `Content-type:
+application/json` and the message in the body of the request. This will return
+`204 No Content` if successful or `400 Bad Request` if the message was not
+correctly formatted.
+
+The Nag is built into the messaging system, and it also has the facility to
+simulate network problems (message drops and delays) in order to experiment
+with the protocol's reaction to failures.
+
+### Protocol Sequence Examples
 
 Here are some diagrams that illustrate how the modules described above all work
 together to achieve consensus on a single value.
 
-First consider the simplest situation: one proposer, one learner and three
-acceptors (and a nag).
+First consider the simplest situation again: one Proposer, one Learner and three
+Acceptors.
 
 <img src='diagrams/001-setup.png' width='400px' />
 
-When the nag's timeout expires, it broadcasts a `prepare` message to the
-acceptors with `$PROP=1`.
+The Nag sends broadcasts a `prepare` message to the Acceptors for the first time
+period.
 
 <img src='diagrams/002-prepare.png' width='400px' />
 
-In turn, the acceptors send `promised` messages to the proposer. Note that
-since no acceptor has accepted a value yet, these `promised` messages do not
-have a `max-accepted-value` field.
+In turn, the Acceptors send `promised` messages to the Proposer. Note that none
+of these have `lastAccepted*` fields since no acceptor has accepted a value
+yet.
 
 <img src='diagrams/003-promise.png' width='400px' />
 
-When the proposer receives two of these `promised` messages, it broadcasts a
-`proposed` message back to all the acceptors. Since none of the `promised`
-messages have a `max-accepted-value` field, the value proposed is `$MYVALUE`.
+When the Proposer receives two of these `promised` messages, it broadcasts a
+`proposed` message back to all the Acceptors. Since none of the `promised`
+messages have `lastAccepted*` fields, the value proposed is `$MYVALUE`.
 
 <img src='diagrams/004-propose.png' width='400px' />
 
-The acceptors may all accept this proposal as it's compatible with the promises
-they made previously. They send `accepted` messages to the learner, and once
-the learner receives two of these messages it learns the value and goes green.
+The Acceptors may all accept this proposal as it's compatible with the promises
+they made previously. They send `accepted` messages to the Learner, and once
+the Learner receives two of these messages it learns that consensus has been
+achieved.
 
 <img src='diagrams/005-accept.png' width='400px' />
 
-This demonstrates the basic message flow, but since there's only one proposer
-there's only one value that could be proposed, and since there's only one
-learner there is no risk of disagreeing on the value learned. Consider a more
-complicated situation with two proposers and two learners as follows.
+This demonstrates the basic message flow, but since there's only one Proposer
+and one the Learner the system cannot end up disagreeing on the value chosen.
+Consider a more complicated situation with two Proposers and two Learners as
+follows.
 
 <img src='diagrams/010-setup.png' width='400px' />
 
-Again, the nag broadcasts a `prepare` message with `$PROP=1`.
+The Nag sends broadcasts a `prepare` message to the Acceptors for the first time
+period.
 
 <img src='diagrams/011-prepare.png' width='400px' />
 
-Again, the acceptors all send out `promised` messages. Note that this is not a
-broadcast: these messages are routed to a single proposer. Here, since there
-are two proposers this can be done by looking at whether `$PROP` is odd or
-even: since it is odd, the promises are sent to the first proposer. Note also
-that since no acceptor has accepted a value yet, these `promised` messages do
-not have a `max-accepted-value` field.
+Again, the Acceptors all send out `promised` messages, and again these do not
+have `lastAccepted*` fields since no value has been accepted.
+
+Note also that this is not a broadcast: these messages are routed to a single
+Proposer. In a real implementation, the choice of Proposer for this time period
+would be made by the Nag in the very first step, and this choice would have to
+be passed around in every message. This only serves to make it harder to
+understand what is going on, so it has been omitted. Instead, since the Nag is
+built into the messaging system it can route `promised` messages to the right
+proposer without bothering the individual modules with this detail.
 
 <img src='diagrams/012-promise.png' width='400px' />
 
-However, at this point a network glitch causes two of the `promised` messages
-to be lost.
+If things carried on without a hitch then the second Proposer wouldn't get to
+do anything, so let's consider the case where two of the `promised` messages
+are not delivered.
 
 <img src='diagrams/013-promise-failed.png' width='400px' />
 
-Since the proposer has only received a single `promised` message, it does
-nothing. Eventually the nag broadcasts another `prepare` message, this time
-with `$PROP=2`.
+Since the Proposer has only received a single `promised` message, it does
+nothing. Eventually the Nag broadcasts another `prepare` message for the second
+time period.
 
 <img src='diagrams/014-retry-prepare.png' width='400px' />
 
-The acceptors all send out further `promised` messages. Since `$PROP` is even,
-they go to the second proposer.  Note that still no acceptor has accepted a
-value yet, so these `promised` messages do not have a `max-accepted-value`
-field.
+The Acceptors all send out further `promised` messages which are routed to the
+second Proposer.  Note that still no Acceptor has accepted a value yet, so
+these `promised` messages still do not have `lastAccepted*` fields.
 
 <img src='diagrams/015-promise-2.png' width='400px' />
 
-They arrive successfully, so the proposer broadcasts a `proposal` with its own
+They arrive successfully, so the Proposer broadcasts a `proposal` with its own
 value.
 
 <img src='diagrams/016-propose.png' width='400px' />
 
-The acceptors may all accept this proposal as it's compatible with the promises
-they made previously. They broadcast `accepted` messages to the learners, and
-once each learner receives two of these messages it learns the value and goes
-green.
+The Acceptors may all accept this proposal as it's compatible with the promises
+they made previously. They broadcast `accepted` messages to the Learners, which
+are all delivered successfully so both Learners learn the value chosen.
 
 <img src='diagrams/017-accept.png' width='400px' />
 
-However, imagine that the network glitch earlier was only temporary and one
-more `promised` messages is now delivered.
+But there's more! Imagine that the undelivered `promised` messages were merely
+delayed and not dropped, and that one more of them is now delivered.
 
 <img src='diagrams/018-delayed-promise.png' width='400px' />
 
-At this point the first proposer broadcasts a `proposed` message with its own
-value, which is different from the other proposer's value.
+At this point the first Proposer broadcasts a `proposed` message with its own
+value, which is different from the other Proposer's value.
 
 <img src='diagrams/019-delayed-propose.png' width='400px' />
 
-But this `proposed` message is not compatible with the acceptors' promises any
-more: they promised to accept no earlier proposition that `$PROP=2` but this
-message has `$PROP=1`. The message is dropped, and there is no inconsistency in
-the values accepted.
+But this `proposed` message is not compatible with the Acceptors' promises any
+more: they promised to accept no propositions in time periods before the
+second, but this proposal was for the first time period. The message is dropped
+by all Acceptors, and there is no inconsistency in the values accepted.
 
-Here is an illustration of another kind of network glitch, showing the purpose
-of the slightly mysterious `max-accepted-value` field. Again, it starts with
-the nag broadcasting a `prepare` message with `$PROP=1`.
+Here is an illustration of another kind of network glitch, showing why
+the Acceptors include the details of what they have previously accepted. Again,
+it starts with the Nag broadcasting a `prepare` message for the first time period.
 
 <img src='diagrams/020-prepare.png' width='400px' />
 
-The accetors send out `promised` messages to the first proposer.
+The Acceptors send out `promised` messages which are routed to the first
+Proposer.
 
 <img src='diagrams/021-promise.png' width='400px' />
 
-When the proposer receives two, it proposes its value.
+When the Proposer receives two, it proposes its value.
 
 <img src='diagrams/022-propose.png' width='400px' />
 
 This proposal is compatible with earlier promises, so it is accepted by all the
-acceptors. But this time the network glitch drops all the messages to the
-second learner. The first learner learns the proposed value and goes green but
-the second is none the wiser.
+Acceptors. But this time the network glitch drops all the messages to the
+second learner. The first learner learns the proposed value, but the second is
+none the wiser.
 
 <img src='diagrams/023-accept.png' width='400px' />
 
-Eventually, the nag sends out another `prepare` message with `$PROP=2`.
+Eventually, the Nag sends out another `prepare` message for the second time
+period.
 
 <img src='diagrams/024-retry-prepare.png' width='400px' />
 
-The acceptors send out `promised` messages in reaction. However, since they
-have all previously accepted a value, these messages include the
-`max-accepted-value` field containing the value they previously accepted.
+The Acceptors send out `promised` messages in reaction. However, since they
+have all previously accepted a value, these messages include `lastAccepted*`
+fields.
 
 <img src='diagrams/025-promise-2.png' width='400px' />
 
-When the proposer receives two of these `promised` messages, it sends out a
-proposal. Crucially, it may not propose its own value as it received a
-`max-accepted-value`, which by the rules above it must propose instead. Thus it
-proposes the same value as the other proposer previosuly proposed.
+When the Proposer receives two of these `promised` messages, it sends out a
+proposal. Crucially, it may not propose its own value as it received
+`lastAccepted*` fields, which by the rules above it must propose instead. Thus
+it proposes the same value as the one the other Proposer previously proposed.
 
 <img src='diagrams/026-propose-2.png' width='400px' />
 
 The proposal is compatible with the promises, so it is accepted. This time, the
-`accepted` messages make it through to the other learner so it now learns the
-value.
+`accepted` messages make it through to the other Learner so it now learns the
+same value that the first Learner learned in the previous time period.
 
 <img src='diagrams/027-accept.png' width='400px' />
 
-Thus the `max-accepted-value` field ensures that proposers cannot propose their
-own values once a different value has been learned.
-
-## Full Paxos
-
-An extension, probably not possible in a single dojo. Note that deciding one
-value is useful but really need to decide a _sequence_ of values.
-
-Do this by running a sequence of Synod protocols as described above, called
-_instances_ and numbered from 0. The instances are effectively independent
-copies of the protocol running above, and messages are now decorated with an
-`instance` field indicating the instance that they apply to.
-
-### Learner
-
-Again, the learner is the simplest module. The messages it now receives are the
-same as before except for an extra `instance` field containing a number:
-
-```javascript
-{"instance":$INSTANCE,"type":"accepted","proposal":$PROP,"by":$NAME,"value":$VALUE}
-```
-
-It doesn't send any messages, but should report to the user when it has learned
-a value. It learns a value by receiving two messages for the same `$PROP` (an
-integer) and `$INSTANCE` but different `$NAME`s. In this case, the `$VALUE` of
-the two messages will always be the same, so it desn't matter which one you
-choose to report.
-
-The previous implementation, keeping all received messages in a list, is still
-a fine approach.
-
-
-
-### Proposer
-
-Again, the Proposer is the next simplest module. It now has a sequence of
-constant strings, `$MYVALUE(0)`, `$MYVALUE(1)`,... where it would like all the
-Learners to learn the string `$MYVALUE($INSTANCE)` for each instance. These
-strings can be whatever you want as long as they do not change once the
-protocol has started. It is a good idea to include your names or a team
-identifier so you can track them. You can either define your sequence
-statically or else allow the user to add to the sequence as the proposer runs.
-
-As before, it receives messages that look like one of these (which are sent by
-Acceptors):
-
-```javascript
-{"instance":$INSTANCE,"type":"promised","proposal":$PROP,"by":$NAME}
-{"instance":$INSTANCE,"type":"promised","proposal":$PROP,"by":$NAME,"max-accepted-proposal":$MAXPROP,"max-accepted-value":$MAXVALUE}
-```
-
-In other words, the `max-accepted-proposal` and `max-accepted-value` fields are
-optional, but not independently: either both are present or both are absent.
-
-When it has received two of these `promised` messages for the same `$PROP` (an
-integer) and `$INSTANCE` with different `$NAME`s, it should respond with a
-message like this:
-
-```javascript
-{"instance":$INSTANCE,"type":"proposed","proposal":$PROP,"value":$VALUE}
-```
-
-The `$VALUE` should be calculated as described above.
-
-There is now a third kind of message it might receive from an Acceptor:
-
-```javascript
-{"instance":$INSTANCE,"type":"promised","proposal":$PROP,"by":$NAME,"includes-greater-instances":true}
-```
-
-This should be handled as if it were a collection of messages like this, for
-_every_ `$INSTANCE2 >= $INSTANCE`:
-
-```javascript
-{"instance":$INSTANCE2,"type":"promised","proposal":$PROP,"by":$NAME}
-```
-
-This means that, if you receive two of these `includes-greater-instances`
-messages, you may respond with a whole collection of `proposed` messages: one
-for each matching entry in your `$MYVALUE()` list.
-
-The previous implementation, keeping all received messages in a list, is still
-a fine approach.
-
-### Acceptor
-
-The Acceptor is again the most complicated module. It has a name, `$NAME` (one
-of `"alice"`, `"brian"` or `"chris"`) which will be agreed in advance as it
-must not clash with that of the other Acceptors. It should include this name in
-the `by` field of any messages it sends.
-
-It receives two kinds of message:
-
-```javascript
-{"instance":$INSTANCE,"type":"prepare","proposal":$PROP,"includes-greater-instance":true}
-{"instance":$INSTANCE,"type":"proposed","proposal":$PROP,"value":$VALUE}
-```
-
-Similarly to before, it may respond to these with:
-
-```javascript
-// in response to a 'prepare':
-{"instance":$INSTANCE,"type":"promised","proposal":$PROP,"by":$NAME}
-{"instance":$INSTANCE,"type":"promised","proposal":$PROP,"by":$NAME,"max-accepted-proposal":$MAXPROP,"max-accepted-value":$MAXVALUE}
-{"instance":$INSTANCE,"type":"promised","proposal":$PROP,"by":$NAME,"includes-greater-instances":true}
-
-// in response to a 'proposed':
-{"instance":$INSTANCE,"type":"accepted","proposal":$PROP,"by":$NAME,"value":$VALUE}
-```
-
-Note that the `prepare` message always includes greater instances, which
-complicates the calculation of which `promised` messages (plural) to send.
-It's always possible to send a promised message which includes greater
-instances too, for a sufficiently large instance that no `accepted` message has
-yet been sent. The remaining instances should be calculated separately as
-before.
-
-For an implementation, it remains viable to track all sent messages, or else
-just the maximum accepted and promised values on an instance-by-instance basis.
-
-## Further Enhancements
-
-TODO more flexible majorities rather than just 2-of-3. Weight functions.
-
-TODO only choose an instance when previous instance's value has been learned
-
-TODO break down proposal ids - last digit is proposer id
-
-TODO altering the topology. topology version in proposal id.
-
-TODO stop working on an instance once value has been learned - discard associated data and ignore future messages. broadcast this. catch up.
-
-TODO combine modules into a single thing
+There are obviously many more ways that things can go wrong, but it is possible
+to prove that no matter how badly the network is performing everything still
+remains consistent.
