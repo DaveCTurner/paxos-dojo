@@ -3,78 +3,147 @@
 An idea for a Leeds Code Dojo session - implement Paxos! In fact, just the
 interesting core: the Synod protocol.
 
+## Introduction
+
+Synod is a protocol for reaching agreement on a single value in a distributed
+system. Grant suggests we should use it to agree on a name for our new startup,
+so get thinking of a good name to propose!
+
+The thing about distributed systems is that you have to assume the individual
+bits of the system are rather unreliable. In more detail:
+
+- modules may fail (i.e. simply stop responding to messages) at any time
+- modules may take arbitrarily long to respond
+- messages may be dropped in transit (i.e. there is no guarantee that a sent
+  message is ever received)
+- messages may be delayed in transit and may not be received in the order in
+  which they were sent
+
+For many years it was believed that with all these things that could go wrong
+it wouldn't be possible to reliably do anything at all. This protocol was
+actually discovered in the process of trying to prove that no such protocol
+could exist.
+
+Of course if things go _too_ wrong then you can't really hope to achieve
+anything. However, using this protocol the worst thing that can happen is that
+no agreement is reached, and this only happens while
+
+- the network is dropping too many messages
+- messages are being delayed too heavily in transit, or
+- too many modules have failed
+
+All of these problems tend to be transient: networks are eventually fixed and
+failed modules are eventually replaced, and when the situation returns to
+normal the protocol carries on and reaches agreement. There is a theorem (known
+as the FLP Impossibility Theorem) which proves that it impossible to do any
+better than this.
+
+The system is unreliable but not actively malicious:
+
+- modules all obey the protocol correctly
+- messages may not be altered in transit
+- message delivery is all-or-nothing
+
 ## Overview
 
-The objective of the protocol is for a distributed system to reach agreement on
-a single value (a string) by communicating over the network. The clever bit is
-that the protocol still works even if the network is unreliable: messages may
-be delayed, reordered or even dropped and the protocol still works. The worst
-thing that can happen is that no agreement is reached, and this only happens
-while the network is dropping messages: as soon as enough messages start to get
-through again, agreement will be reached.
+There are four kinds of module in the protocol:
 
-There are three kinds of module in the protocol, known as Learner, Proposer and
-Acceptor. The intention is that each team implements one of these, although
-faster teams may be able to do more than one.
+- Nag
+- Proposer
+- Acceptor and
+- Learner
 
-We need at least one Learner, one Proposer and exactly three Acceptors, however
-things get more interesting if there is more than one Learner and Proposer -
-it's kind of trivial if there's only one of each.
+All the Nag does is periodically broadcast a message indicating the current
+time, which is rather boring so has already been done. The intention is that
+each team implements one of the other three modules. We need at least one
+Learner, one Proposer and exactly three Acceptors:
 
-The modules will communicate via a central bus running in the cloud. Performing
-a HTTP GET will return a JSON-formatted message, if one is available. If not,
-the bus will wait for a while to see if one becomes available, and eventually
-return `204 No Content` if the wait is fruitless. The module should then retry
-its GET.
+<img src='diagrams/001-setup.png' width='400px' />
+ 
+When everything is working smoothly, the protocol runs as follows. First, the
+Nag broadcasts the current time period to the Acceptors:
 
-Messages can be sent with a separate HTTP POST to the bus.
+<img src='diagrams/002-prepare.png' width='400px' />
+
+When each Acceptor receives this broadcast, it sends a `promised` message to
+the Proposer, promising that in future it won't accept any proposals made
+before the current time period.
+
+<img src='diagrams/003-promise.png' width='400px' />
+
+When the Proposer receives these `promised` messages from a majority of
+Acceptors (i.e. two of them), it proposes a value to agree upon in the current
+time period by broadcasting a `proposed` message back to all the Acceptors.
+
+<img src='diagrams/004-propose.png' width='400px' />
+
+Since the Acceptors have not made any further promises, they all accept the
+proposed value and send `accepted` messages to the Learner. Once the Learner
+receives two such `accepted` messages for the same time period, it has learned
+that this value is the one that the system has agreed upon.
+
+<img src='diagrams/005-accept.png' width='400px' />
+
+There has to be exactly three Acceptors, but it's much more interesting if
+there is more than one Learner and Proposer:
+
+- With one Proposer there is only one value to be proposed (so eventual
+  consensus is guaranteed) and the system will stop working if this Proposer
+fails.
+
+- With one Learner there is only one place where a value is learned (so
+  eventual consensus is guaranteed) and the system will stop working if this
+Learner fails.
 
 ## Module Descriptions
 
-This section describes what messages each module may send and receive.  Since
-the protocol continues to work even if some messages are lost, it is ok for
-modules to choose to ignore a received message, and not to send a message even
-if this section permits it. On the other hand, everything goes wrong if you
-send a message that isn't permitted, so it is important to err on the side of
-caution. That said, if too many messages are ignored then agreement will never
-be reached, so don't be too cautious!
+The modules communicate with each other using JSON-formatted messages for the
+sake of interoperatibility. This section gives the details of the messages each
+module may send and receive.
+
+Since the protocol continues to work even if some messages are lost, it is ok
+for modules to choose to ignore a received message, and not to send a message
+even if this section permits it. On the other hand, everything goes wrong if
+you send a message that isn't permitted, so it is important to err on the side
+of caution. That said, if too many messages are ignored then agreement will
+never be reached, so don't be too cautious!
 
 ### Learner
 
 The Learner is the simplest module. It receives messages that look like this:
 
 ```javascript
-{"type":"accepted","proposal":$PROP,"by":$NAME,"value":$VALUE}
+{"type":"accepted","timePeriod":$TIMEPERIOD,"by":$NAME,"value":$VALUE}
 ```
 
 It doesn't send any messages, but should report to the user when it has learned
-a value. It learns a value by receiving two messages for the same `$PROP` (an
-integer) but different `$NAME`s. In this case, the `$VALUE` of the two messages
-will always be the same, so it desn't matter which one you choose to report.
+a value. It learns a value by receiving two messages for the same `$TIMEPERIOD`
+(an integer) but different `$NAME`s. In this case, the `$VALUE` of the two
+messages will always be the same, so it desn't matter which one you choose to
+report.
 
 A simple Learner implementation is to keep a list of all messages received and
 check each new message against all the items that are already in the list,
-looking for pairs that match on `$PROP` but not on `$NAME`. When such a pair is
-found, simply print out the `$VALUE` from either message.
+looking for pairs that match on `$TIMEPERIOD` but not on `$NAME`. When such a
+pair is found, simply print out the `$VALUE` from either message.
 
 Here is an example of the expected behaviour:
 
 ```javascript
-{"type":"accepted","proposal":1,"by":"alice","value":"value 1"}
+{"type":"accepted","timePeriod":1,"by":"alice","value":"value 1"}
   // no value learned - no previous messags
 
-{"type":"accepted","proposal":2,"by":"brian","value":"value 2"}
-  // no value learned - different $PROP from previous message
+{"type":"accepted","timePeriod":2,"by":"brian","value":"value 2"}
+  // no value learned - different $TIMEPERIOD from previous message
 
-{"type":"accepted","proposal":2,"by":"brian","value":"value 2"}
-  // no value learned - different $PROP from or same $NAME as previous messages
+{"type":"accepted","timePeriod":2,"by":"brian","value":"value 2"}
+  // no value learned - same $NAME as previous messages
 
-{"type":"accepted","proposal":2,"by":"chris","value":"value 2"}
-  -> 'value 2' // value learned - same $PROP but different $NAME compared with previous message
+{"type":"accepted","timePeriod":2,"by":"chris","value":"value 2"}
+  -> 'value 2' // value learned - same $TIMEPERIOD but different $NAME compared with previous message
 ```
 
-There can be as many Learners running as desired. The fundamental point of
-Paxos is that all values learned by all Learners are equal.
+There can be as many Learners running as desired.
 
 ### Proposer
 
@@ -280,6 +349,16 @@ Here is an example of the expected behaviour, tracking just the greatest
   // as proposal 3 has not been accepted, but this is unnecessary and makes the
   // implementation more complicated.
 ```
+
+### Comms details TODO
+
+The modules will communicate via a central bus running in the cloud. Performing
+a HTTP GET will return a JSON-formatted message, if one is available. If not,
+the bus will wait for a while to see if one becomes available, and eventually
+return `204 No Content` if the wait is fruitless. The module should then retry
+its GET. Messages can be sent with a separate HTTP POST to the bus.
+
+TODO Links to example code for interfacing with the bus.
 
 ### Protocol Flows
 
