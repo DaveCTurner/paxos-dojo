@@ -189,6 +189,9 @@ main = do
         corsHeaders =
           [("Access-Control-Allow-Origin", T.encodeUtf8 "*")
           ,("Access-Control-Allow-Headers", T.encodeUtf8 "Content-Type")
+          ,("Cache-Control", T.encodeUtf8 "no-cache, no-store, must-revalidate")
+          ,("Pragma", T.encodeUtf8 "no-cache")
+          ,("Expires", T.encodeUtf8 "0")
           ]
 
         respondJson :: ToJSON a => a -> IO ResponseReceived
