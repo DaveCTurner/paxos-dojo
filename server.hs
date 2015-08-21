@@ -125,32 +125,35 @@ instance FromJSON PaxosMessage where
         <|> (FreePromised <$> maybeInstance <*> proposalId <*> acceptorId)
 
 data Config = Config
-  { cGetTimeout     :: Integer
-  , cQueueExpiry    :: Integer
+  { cGetTimeoutSec  :: Integer
+  , cQueueExpirySec :: Integer
   , cProposerCount  :: Integer
   , cDropPercentage :: Double
-  , cMinDelay       :: Int
-  , cMaxDelay       :: Int
+  , cMinDelaySec    :: Int
+  , cMaxDelaySec    :: Int
+  , cNagPeriodSec   :: Int
   }
 
 instance ToJSON Config where
   toJSON Config{..} = object
-    [ "get-timeout-us"  .= cGetTimeout
-    , "queue-expiry-us" .= cQueueExpiry
-    , "proposer-count"  .= cProposerCount
-    , "drop-percentage" .= cDropPercentage
-    , "min-delay-us"    .= cMinDelay
-    , "max-delay-us"    .= cMaxDelay
+    [ "get-timeout-sec"  .= cGetTimeoutSec
+    , "queue-expiry-sec" .= cQueueExpirySec
+    , "proposer-count"   .= cProposerCount
+    , "drop-percentage"  .= cDropPercentage
+    , "min-delay-sec"    .= cMinDelaySec
+    , "max-delay-sec"    .= cMaxDelaySec
+    , "nag-period-sec"   .= cNagPeriodSec
     ]
 
 instance FromJSON Config where
   parseJSON = withObject "Config" $ \o -> Config
-    <$> o .: "get-timeout-us"
-    <*> o .: "queue-expiry-us"
+    <$> o .: "get-timeout-sec"
+    <*> o .: "queue-expiry-sec"
     <*> o .: "proposer-count"
     <*> o .: "drop-percentage"
-    <*> o .: "min-delay-us"
-    <*> o .: "max-delay-us"
+    <*> o .: "min-delay-sec"
+    <*> o .: "max-delay-sec"
+    <*> o .: "nag-period-sec"
 
 data Status = Status Config [(B.ByteString, UTCTime, Bool)]
 
@@ -164,18 +167,22 @@ instance ToJSON Status where
         ]) queues
     ]
 
+unixEpoch :: UTCTime
+unixEpoch = UTCTime (fromGregorian 1970 01 01) 0
+
 main :: IO ()
 main = do
   outgoingQueueByNameVar <- newTVarIO M.empty
   incomingQueue          <- newTQueueIO
   logLock                <- newMVar ()
   configVar              <- newTVarIO $ Config
-    { cGetTimeout     = 10000000
-    , cQueueExpiry    = 60000000
+    { cGetTimeoutSec  = 10
+    , cQueueExpirySec = 60
     , cProposerCount  = 10
     , cDropPercentage = 0
-    , cMinDelay       = 0
-    , cMaxDelay       = 0
+    , cMinDelaySec    = 0
+    , cMaxDelaySec    = 0
+    , cNagPeriodSec   = 5
     }
 
   let logMessage :: UTCTime -> B.ByteString -> String -> IO ()
@@ -233,7 +240,7 @@ main = do
               writeTVar outgoingQueueByNameVar $ M.insert queueName (now, theQueue) outgoingQueueByName
               (,) theQueue <$> readTVar configVar
 
-            response <- timeout cGetTimeout $ atomically $ readTQueue theQueue
+            response <- timeout (cGetTimeoutSec * 1000000) $ atomically $ readTQueue theQueue
 
             case response of
               Nothing -> respondEmpty
@@ -267,12 +274,22 @@ main = do
 
 
 
+    $ \_ -> withAsync (forever $ do
+        
+        nagPeriodSec <- cNagPeriodSec <$> readTVarIO configVar
+        threadDelay $ nagPeriodSec * 1000000
+
+        now <- getCurrentTime
+        let value = Prepare Nothing $ floor $ diffUTCTime now unixEpoch
+        logMessage now "/nag" $ "POST " ++ (T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode value)
+        atomically $ writeTQueue incomingQueue ("/nag", now, value))
+
     $ \_ -> forever $ join $ atomically $ do
 
         (incomingQueue, receivedTime, value) <- readTQueue incomingQueue
         Config{..} <- readTVar configVar
 
-        let staleIfNotQueriedSince = addUTCTime (fromIntegral cQueueExpiry * negate 0.000001) receivedTime
+        let staleIfNotQueriedSince = addUTCTime (fromIntegral $ negate cQueueExpirySec) receivedTime
         (activeQueuesMap, staleQueuesMap) <- M.partition ((> staleIfNotQueriedSince) . fst)
             <$> readTVar outgoingQueueByNameVar
         writeTVar outgoingQueueByNameVar activeQueuesMap
@@ -303,7 +320,8 @@ main = do
             logMessage receivedTime staleQueueName ("expired at " <> formatISO8601Millis staleIfNotQueriedSince)
           forM_ outputQueues $ \queue -> do
             dropRV  <- randomRIO (0.0, 100.0)
-            delayRV <- randomRIO (cMinDelay, cMaxDelay)
+            let toMilliseconds = fromIntegral . (1000000 *)
+            delayRV <- randomRIO (toMilliseconds cMinDelaySec, toMilliseconds cMaxDelaySec)
             when (dropRV >= cDropPercentage) $ void $ forkIO $ do
               threadDelay delayRV
               atomically $ writeTQueue queue value
