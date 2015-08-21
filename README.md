@@ -29,31 +29,6 @@ its GET.
 
 Messages can be sent with a separate HTTP POST to the bus.
 
-
-<img src='diagrams/001-setup.png' width='400px' />
-<img src='diagrams/002-prepare.png' width='400px' />
-<img src='diagrams/003-promise.png' width='400px' />
-<img src='diagrams/004-propose.png' width='400px' />
-<img src='diagrams/005-accept.png' width='400px' />
-<img src='diagrams/010-setup.png' width='400px' />
-<img src='diagrams/011-prepare.png' width='400px' />
-<img src='diagrams/012-promise.png' width='400px' />
-<img src='diagrams/013-promise-failed.png' width='400px' />
-<img src='diagrams/014-retry-prepare.png' width='400px' />
-<img src='diagrams/015-promise-2.png' width='400px' />
-<img src='diagrams/016-propose.png' width='400px' />
-<img src='diagrams/017-accept.png' width='400px' />
-<img src='diagrams/018-delayed-promise.png' width='400px' />
-<img src='diagrams/019-delayed-propose.png' width='400px' />
-<img src='diagrams/020-prepare.png' width='400px' />
-<img src='diagrams/021-promise.png' width='400px' />
-<img src='diagrams/022-propose.png' width='400px' />
-<img src='diagrams/023-accept.png' width='400px' />
-<img src='diagrams/024-retry-prepare.png' width='400px' />
-<img src='diagrams/025-promise-2.png' width='400px' />
-<img src='diagrams/026-propose-2.png' width='400px' />
-<img src='diagrams/027-accept.png' width='400px' />
-
 ## Module Descriptions
 
 This section describes what messages each module may send and receive.  Since
@@ -239,6 +214,11 @@ An `accepted` message is sent in response to the receipt of a `proposed`
 message as long as no `promised` message has already been sent with a
 (strictly) greater `$PROP` value.
 
+The `proposed` message comes from one of the Proposers, and the `prepare` message
+comes from a separate module, called the Nag, which simply sends out `prepare` messages periodically,
+with increasing `$PROP` values. The Nag ensures that consensus is reached as long 
+as the network is eventually reliable.
+
 The obvious Acceptor implementation is to track all sent messages and apply the
 logic described above when handling a newly-received message.
 
@@ -298,6 +278,128 @@ Here is an example of the expected behaviour, tracking just the greatest `$PROP`
   // as proposal 3 has not been accepted, but this is unnecessary and makes the
   // implementation more complicated.
 ```
+
+### Protocol Flows
+
+Here are some diagrams that illustrate how the modules
+described above all work together to achieve consensus on a single value.
+
+First consider the simplest situation: one proposer, one learner and three acceptors (and a nag).
+
+<img src='diagrams/001-setup.png' width='400px' />
+
+When the nag's timeout expires, it broadcasts a `prepare` message to the acceptors with `$PROP=1`.
+
+<img src='diagrams/002-prepare.png' width='400px' />
+
+In turn, the acceptors send `promised` messages to the proposer. Note that since no acceptor
+has accepted a value yet, these `promised` messages do not have a `max-accepted-value` field.
+
+<img src='diagrams/003-promise.png' width='400px' />
+
+When the proposer receives two of these `promised` messages, it broadcasts a `proposed` message
+back to all the acceptors. Since none of the `promised` messages have a `max-accepted-value` field,
+the value proposed is `$MYVALUE`.
+
+<img src='diagrams/004-propose.png' width='400px' />
+
+The acceptors may all accept this proposal as it's compatible with the promises they made previously. They send `accepted`
+messages to the learner, and once the learner receives two of these messages it learns the value and goes green.
+
+<img src='diagrams/005-accept.png' width='400px' />
+
+This demonstrates the basic message flow, but since there's only one proposer there's only one value that could be proposed,
+and since there's only one learner there is no risk of disagreeing on the value learned. Consider a more complicated situation with two proposers and two learners as follows.
+
+<img src='diagrams/010-setup.png' width='400px' />
+
+Again, the nag broadcasts a `prepare` message with `$PROP=1`.
+
+<img src='diagrams/011-prepare.png' width='400px' />
+
+Again, the acceptors all send out `promised` messages. Note that this is not a broadcast: these messages are routed to a single proposer. Here, since there are two proposers this can be done by looking at whether `$PROP` is odd or even: since it is odd, the promises are sent to the first proposer. Note also that since no acceptor
+has accepted a value yet, these `promised` messages do not have a `max-accepted-value` field.
+
+
+<img src='diagrams/012-promise.png' width='400px' />
+
+However, at this point a network glitch causes two of the `promised` messages to be lost.
+
+<img src='diagrams/013-promise-failed.png' width='400px' />
+
+Since the proposer has only received a single `promised` message, it does nothing. Eventually
+the nag broadcasts another `prepare` message, this time with `$PROP=2`.
+
+<img src='diagrams/014-retry-prepare.png' width='400px' />
+
+The acceptors all send out further `promised` messages. Since `$PROP` is even, they go to the second proposer.
+Note that still no acceptor
+has accepted a value yet, so these `promised` messages do not have a `max-accepted-value` field.
+
+<img src='diagrams/015-promise-2.png' width='400px' />
+
+They arrive successfully, so the proposer broadcasts a `proposal` with its own value.
+
+<img src='diagrams/016-propose.png' width='400px' />
+
+The acceptors may all accept this proposal as it's compatible with the promises they made previously. They broadcast `accepted`
+messages to the learners, and once each learner receives two of these messages it learns the value and goes green.
+
+<img src='diagrams/017-accept.png' width='400px' />
+
+However, imagine that the network glitch earlier was only temporary and one more `promised` messages is now delivered.
+
+<img src='diagrams/018-delayed-promise.png' width='400px' />
+
+At this point the first proposer broadcasts a `proposed` message with its own value, which is different from the
+other proposer's value.
+
+<img src='diagrams/019-delayed-propose.png' width='400px' />
+
+But this `proposed` message is not compatible with the acceptors' promises any more: they promised
+to accept no earlier proposition that `$PROP=2` but this message has `$PROP=1`. The message is dropped,
+and there is no inconsistency in the values accepted.
+
+Here is an illustration of another kind of network glitch, showing the purpose of the slightly mysterious `max-accepted-value` field. Again, it starts with the nag broadcasting a `prepare` message with `$PROP=1`.
+
+<img src='diagrams/020-prepare.png' width='400px' />
+
+The accetors send out `promised` messages to the first proposer.
+
+<img src='diagrams/021-promise.png' width='400px' />
+
+When the proposer receives two, it proposes its value.
+
+<img src='diagrams/022-propose.png' width='400px' />
+
+This proposal is compatible with earlier promises, so it is accepted by all the acceptors. But this time
+the network glitch drops all the messages to the second learner. The first learner learns the proposed value and goes green
+but the second is none the wiser.
+
+<img src='diagrams/023-accept.png' width='400px' />
+
+Eventually, the nag sends out another `prepare` message with `$PROP=2`.
+
+<img src='diagrams/024-retry-prepare.png' width='400px' />
+
+The acceptors send out `promised` messages in reaction. However, since they have all previously
+accepted a value, these messages include the `max-accepted-value` field containing the value
+they previously accepted.
+
+<img src='diagrams/025-promise-2.png' width='400px' />
+
+When the proposer receives two of these `promised` messages, it sends out a proposal. Crucially,
+it may not propose its own value as it received a `max-accepted-value`, which by
+the rules above it must propose instead. Thus it proposes the same value as the other proposer previosuly proposed.
+
+<img src='diagrams/026-propose-2.png' width='400px' />
+
+The proposal is compatible with the promises, so it is accepted. This time, the `accepted` messages make it through to the other learner so it now learns the value.
+
+<img src='diagrams/027-accept.png' width='400px' />
+
+Thus the `max-accepted-value` field ensures that proposers cannot propose their own values once a different
+value has been learned.
 
 ## Full Paxos
 
