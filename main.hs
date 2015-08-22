@@ -162,7 +162,7 @@ instance ToJSON ProposedMessage where
 runProposer :: ProposerState -> Int -> IO a
 runProposer s0 ident = go s0
   where
-  uri = "http://127.0.0.1:24192/proposer/hasell-dt/" ++ show ident
+  uri = "http://127.0.0.1:24192/proposer/haskell-dt/" ++ show ident
   go s = do
     promisedMessage <- getJSON uri
     let ((),s',outputs) = runRWS (proposer promisedMessage) ("value from proposer " ++ show ident) s
