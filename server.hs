@@ -10,6 +10,7 @@ import Control.Concurrent.Timeout
 import Control.Monad
 import Data.Aeson hiding (Value)
 import Data.Aeson.Types (Pair)
+import Data.Hashable
 import Data.Monoid
 import Data.Time
 import Data.Time.ISO8601
@@ -18,9 +19,9 @@ import Network.Wai
 import Network.Wai.Handler.Warp
 import System.Random
 import Text.Printf
-import qualified Data.Map as M
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 
@@ -121,7 +122,7 @@ instance FromJSON PaxosMessage where
         <|> (MultiPromised
                 <$> o .: "instance"
                 <*> timePeriod
-                <*> acceptorId) -- TODO need to check the includesGreatestInstances field
+                <*> acceptorId) -- TODO need to check the includesGreatestInstances field is true here
         <|> (FreePromised <$> maybeInstance <*> timePeriod <*> acceptorId)
         -- TODO worth checking there are no other fields
 
@@ -133,6 +134,7 @@ data Config = Config
   , cMinDelaySec    :: Int
   , cMaxDelaySec    :: Int
   , cNagPeriodSec   :: Int
+  , cPartitionedAcceptors :: [T.Text]
   }
 
 instance ToJSON Config where
@@ -144,6 +146,7 @@ instance ToJSON Config where
     , "min-delay-sec"    .= cMinDelaySec
     , "max-delay-sec"    .= cMaxDelaySec
     , "nag-period-sec"   .= cNagPeriodSec
+    , "partitioned-acceptors" .= cPartitionedAcceptors
     ]
 
 instance FromJSON Config where
@@ -155,6 +158,7 @@ instance FromJSON Config where
     <*> o .: "min-delay-sec"
     <*> o .: "max-delay-sec"
     <*> o .: "nag-period-sec"
+    <*> o .: "partitioned-acceptors"
 
 data Status = Status Config [(B.ByteString, UTCTime, Bool)]
 
@@ -193,6 +197,7 @@ main = do
     , cMinDelaySec    = 0
     , cMaxDelaySec    = 0
     , cNagPeriodSec   = 5
+    , cPartitionedAcceptors = []
     }
 
   let logMessage :: UTCTime -> B.ByteString -> String -> IO ()
@@ -340,7 +345,11 @@ main = do
 
         shouldOutputTo <- case value of
           Prepare  {}                      -> return isAcceptor
-          Proposed {}                      -> return isAcceptor
+          Proposed {}                      -> return $ let partitionedAcceptorCount = length cPartitionedAcceptors in
+            if partitionedAcceptorCount == 0
+              then isAcceptor
+              else \a -> isAcceptor a && a == T.encodeUtf8 (cPartitionedAcceptors !! (mod (hash incomingQueueName) partitionedAcceptorCount))
+
           Accepted {}                      -> return isLearner
           MultiPromised _ timePeriod _     -> findRelevantProposer timePeriod
           FreePromised  _ timePeriod _     -> findRelevantProposer timePeriod

@@ -98,7 +98,7 @@ main :: IO ()
 main = do
   logLock <- newMVar ()
 
-  forM_ ["alice", {- "brian", -} "chris"] $ forkIO . runAcceptor (AcceptorState Nothing Free)
+  forM_ ["alice", "brian", "chris"] $ forkIO . runAcceptor (AcceptorState Nothing Free)
   forM_ [0..4] $ forkIO . runLearner (LearnerState []) logLock
   forM_ [0..9] $ forkIO . runProposer (ProposerState S.empty [])
 
