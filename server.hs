@@ -171,6 +171,12 @@ instance ToJSON Status where
 unixEpoch :: UTCTime
 unixEpoch = UTCTime (fromGregorian 1970 01 01) 0
 
+checking :: (a -> Bool) -> STM a -> STM a
+checking p go = do
+  result <- go
+  check $ p result
+  return result
+
 main :: IO ()
 main = do
   outgoingQueueByNameVar   <- newTVarIO M.empty
@@ -280,7 +286,7 @@ main = do
 
     $ \_ -> withAsync (forever $ do
         
-        nagPeriodSec <- cNagPeriodSec <$> readTVarIO configVar
+        nagPeriodSec <- atomically $ checking (>0) $ cNagPeriodSec <$> readTVar configVar
         threadDelay $ nagPeriodSec * 1000000
 
         now <- getCurrentTime
