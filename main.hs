@@ -100,7 +100,7 @@ main = do
 
   forM_ ["alice", "brian", "chris"] $ forkIO . runAcceptor (AcceptorState Nothing Free)
   forM_ [0..4] $ forkIO . runLearner (LearnerState []) logLock
-  forM_ [0..9] $ forkIO . runProposer (ProposerState S.empty [])
+  forM_ [0..3] $ forkIO . runProposer (ProposerState S.empty [])
 
   forever $ threadDelay 100000000
 
@@ -132,7 +132,7 @@ ignoringExceptions
 runLearner :: LearnerState -> MVar () -> Int -> IO a
 runLearner s0 logLock ident = go s0
   where
-  uri = "http://127.0.0.1:24192/learner/haskell-dt/" ++ show ident
+  uri = "http://127.0.0.1:24192/learner/hs-dt/" ++ show ident
   go s = do
     acceptedMessage <- getJSON uri
     let ((),s',outputs) = runRWS (learner acceptedMessage) () s
@@ -162,7 +162,7 @@ instance ToJSON ProposedMessage where
 runProposer :: ProposerState -> Int -> IO a
 runProposer s0 ident = go s0
   where
-  uri = "http://127.0.0.1:24192/proposer/haskell-dt/" ++ show ident
+  uri = "http://127.0.0.1:24192/proposer/hs-dt/" ++ show ident
   go s = do
     promisedMessage <- getJSON uri
     let ((),s',outputs) = runRWS (proposer promisedMessage) ("value from proposer " ++ show ident) s
