@@ -11,6 +11,7 @@ import Control.Monad
 import Data.Aeson hiding (Value)
 import Data.Aeson.Types (Pair)
 import Data.Hashable
+import Data.List (findIndex)
 import Data.Monoid
 import Data.Time
 import Data.Time.ISO8601
@@ -326,22 +327,26 @@ main = do
                 then return $ const False
                 else do
                   proposersByTimePeriod <- readTVar proposersByTimePeriodVar
-                  case M.lookup timePeriod proposersByTimePeriod of
+                  isRelevantProposer <- case M.lookup timePeriod proposersByTimePeriod of
                     Just proposer -> return (== proposer)
+
                     Nothing -> do
-                      nextProposers <- readTVar nextProposersVar
+                      waitingProposers <- readTVar nextProposersVar
+                      let activeProposers = filter isProposer $ M.keys activeQueuesMap
+                          nextProposers = if null waitingProposers then activeProposers else waitingProposers
+
                       case nextProposers of
-                        (proposer:otherProposers) -> do
-                          writeTVar nextProposersVar otherProposers
+                        [] -> return $ const False
+                        (proposer:_) -> do
+                          writeTVar nextProposersVar $ filter (/= proposer) nextProposers
                           writeTVar proposersByTimePeriodVar $ M.insert timePeriod proposer proposersByTimePeriod
                           return (== proposer)
-                        [] -> do
-                          case filter isProposer $ M.keys activeQueuesMap of
-                            [] -> return $ const False
-                            (proposer:otherProposers) -> do
-                              writeTVar nextProposersVar otherProposers
-                              writeTVar proposersByTimePeriodVar $ M.insert timePeriod proposer proposersByTimePeriod
-                              return (== proposer)
+
+                  let isInCorrectPartition = case findIndex (\a -> T.encodeUtf8 a == incomingQueueName) cPartitionedAcceptors of
+                        Nothing -> const True
+                        Just partition -> \p -> mod (hash p) (length cPartitionedAcceptors) == partition
+
+                  return $ \p -> isRelevantProposer p && isInCorrectPartition p
 
         shouldOutputTo <- case value of
           Prepare  {}                      -> return isAcceptor
