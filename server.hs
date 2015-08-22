@@ -19,6 +19,7 @@ import Network.HTTP.Types hiding (Status)
 import Network.Wai
 import Network.Wai.Handler.Warp
 import System.Random
+import System.Console.ANSI
 import Text.Printf
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
@@ -161,11 +162,14 @@ instance FromJSON Config where
     <*> o .: "nag-period-sec"
     <*> o .: "partitioned-acceptors"
 
-data Status = Status Config [(B.ByteString, UTCTime, Bool)]
+data Status = Status Config Integer (M.Map TimePeriod B.ByteString) [B.ByteString] [(B.ByteString, UTCTime, Bool)]
 
 instance ToJSON Status where
-  toJSON (Status config queues) = object
+  toJSON (Status config minTimePeriod proposersByTimePeriod nextProposers queues) = object
     [ "config" .= config
+    , "min-time-period" .= minTimePeriod
+    , "next-proposers" .= map T.decodeUtf8 nextProposers
+    , "proposers-by-time-period" .= object [T.pack (show k) .= T.decodeUtf8 v | (k,v) <- M.toList proposersByTimePeriod]
     , "queues" .= map (\(queueName, lastGetTime, isEmpty) -> object
         [ "queue" .= T.decodeUtf8 queueName
         , "last-get-time" .= formatISO8601Micros lastGetTime
@@ -181,6 +185,11 @@ checking p go = do
   result <- go
   check $ p result
   return result
+
+data MessageDirection
+  = Inbound
+  | Outbound
+  | Notification
 
 main :: IO ()
 main = do
@@ -201,9 +210,22 @@ main = do
     , cPartitionedAcceptors = []
     }
 
-  let logMessage :: UTCTime -> B.ByteString -> String -> IO ()
-      logMessage time queueName message = void $ forkIO $ withMVar logLock $ \_ -> putStrLn
-        $ printf "%-27s %-15s %s" (formatISO8601Micros time) (T.unpack $ T.decodeUtf8 queueName) message
+  let logMessage :: UTCTime -> MessageDirection -> B.ByteString -> String -> IO ()
+      logMessage time messageDirection queueName message = void $ forkIO $ withMVar logLock $ \_ -> do
+        putStrLn $ printf "%s%-13s%s %s%c%s%s%-15s%s %s"
+          (setSGRCode [ SetColor Foreground Vivid Magenta ])
+          (take 13 $ drop 11 $ formatISO8601Micros time)
+          (setSGRCode [Reset])
+
+          (setSGRCode [ SetColor Foreground Vivid $ case messageDirection of Inbound -> Red; Outbound -> Green; Notification -> Yellow ])
+          (case messageDirection of Inbound -> '<'; Outbound -> '>'; Notification -> '!')
+          (setSGRCode [Reset])
+
+          (setSGRCode [ SetColor Foreground Vivid Cyan ])
+          (T.unpack $ T.decodeUtf8 queueName)
+          (setSGRCode [Reset])
+
+          message
 
   withAsync (run 24192 $ \req respond -> do
     now <- getCurrentTime
@@ -235,6 +257,9 @@ main = do
             status <- atomically $ do
               outgoingQueueByName <- readTVar outgoingQueueByNameVar
               Status <$> readTVar configVar
+                     <*> readTVar minTimePeriodVar
+                     <*> readTVar proposersByTimePeriodVar
+                     <*> readTVar nextProposersVar
                      <*> forM (M.toList outgoingQueueByName)
                   (\(queueName', (lastAccessTime, queue)) ->
                     (,,) queueName' lastAccessTime <$> isEmptyTQueue queue)
@@ -263,7 +288,7 @@ main = do
               Just value -> do
                 let valueBytes = encode (value :: PaxosMessage)
                 responseTime <- getCurrentTime
-                logMessage responseTime queueName $ "GET  " ++ (T.unpack $ T.decodeUtf8 $ BL.toStrict valueBytes)
+                logMessage responseTime Outbound queueName $ T.unpack $ T.decodeUtf8 $ BL.toStrict valueBytes
                 respondJson value
 
       Right POST
@@ -282,7 +307,7 @@ main = do
             case maybeValue of
               Nothing -> respondBadRequest
               Just value -> do
-                logMessage now queueName $ "POST " ++ (T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode value)
+                logMessage now Inbound queueName $ T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode value
                 atomically $ writeTQueue incomingQueue (queueName, now, value :: PaxosMessage)
                 respondEmpty
 
@@ -291,14 +316,14 @@ main = do
 
 
     $ \_ -> withAsync (forever $ do
-        
+
         nagPeriodSec <- atomically $ checking (>0) $ cNagPeriodSec <$> readTVar configVar
         threadDelay $ nagPeriodSec * 1000000
 
         now <- getCurrentTime
         let timePeriod = floor $ diffUTCTime now unixEpoch
             value = Prepare Nothing timePeriod
-        logMessage now "/nag" $ "POST " ++ (T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode value)
+        logMessage now Inbound "/nag" $ T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode value
         atomically $ do
           let minTimePeriod = timePeriod - 300
           modifyTVar minTimePeriodVar $ max minTimePeriod
@@ -367,7 +392,7 @@ main = do
 
         return $ do
           forM_ (M.keys staleQueuesMap) $ \staleQueueName ->
-            logMessage receivedTime staleQueueName ("expired at " <> formatISO8601Millis staleIfNotQueriedSince)
+            logMessage receivedTime Notification staleQueueName ("expired at " <> formatISO8601Millis staleIfNotQueriedSince)
           forM_ outputQueues $ \queue -> do
             dropRV  <- randomRIO (0.0, 100.0)
             let toMilliseconds = fromIntegral . (1000000 *)
