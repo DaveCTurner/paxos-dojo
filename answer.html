@@ -1,6 +1,19 @@
 <!DOCTYPE html>
 <html>
 <head>
+<style type='text/css'>
+body { font-family: sans-serif; font-size: x-small; }
+.learner-received { color: #b0b0b0; }
+.proposer-received { color: #b0b0b0; }
+.learner-learned { font-weight: bold; }
+.proposer-proposed { font-weight: bold; }
+.nothing-learned { background-color: #ffd0d0; padding: 6px; }
+.something-learned { font-weight: bold; background-color: #d0ffd0;  padding: 6px; }
+td { vertical-align: top; }
+#learner-messages { background-color: #d0ffd0; }
+#proposer-messages { background-color: #ffd0d0; }
+.table-container { max-width: 40%; min-width: 40%; display: inline-block; }
+</style>
 <script type='text/javascript'>
 
 function runModule(url, cb) {
@@ -27,17 +40,43 @@ function runModule(url, cb) {
   req.open('GET', url);
   req.send();
 }
+</script>
+
+</head>
+<body>
+<div style='float: right'><div id='learned-value' class='nothing-learned'>Nothing learned yet</div></div>
+<h1 id='heading'>Javascript seems to be disabled</h1>
+<div class='table-container'><h2>Proposer activity (newest first)</h2><table id='proposer-messages'></table></div>
+<div class='table-container'><h2>Learner activity (newest first)</h2><table id='learner-messages'></table></div>
+</tr></table>
+
+
+<script type='text/javascript'>
+function logMessage(tableId, cellClass, cellText) {
+  var table = document.getElementById(tableId);
+  var row = table.insertRow(0);
+  var cell = row.insertCell(0);
+  cell.className = cellClass;
+  cell.innerHTML = cellText;
+}
+
+myId = Math.floor(Math.random() * 1000000);
+document.getElementById('heading').innerHTML = 'Paxos in Javascript (#' + myId + ')';
 
 learnerReceived = [];
 
-runModule('http://localhost:8080/paxos/learner/javascript-dt/' + Math.random(), function(currMessage, respond) {
-  console.log('learner currMessage: ' + JSON.stringify(currMessage));
+runModule('http://localhost:8080/paxos/learner/js-dt/' + myId, function(currMessage, respond) {
+  logMessage('learner-messages', 'learner-received', 'Received ' + JSON.stringify(currMessage));
 
   var haveLearned = false;
   learnerReceived.forEach(function(prevMessage) {
     if (!haveLearned && currMessage.timePeriod === prevMessage.timePeriod && currMessage.by != prevMessage.by) {
-      console.log('learned value: \'' + currMessage.value + '\'');
+      logMessage('learner-messages', 'learner-learned', 'Learned value \'' + currMessage.value + '\'');
       haveLearned = true;
+      
+      var learnedValueDiv = document.getElementById('learned-value');
+      learnedValueDiv.innerHTML = 'Learned value \'' + currMessage.value + '\'';
+      learnedValueDiv.className = 'something-learned';
     }
   });
 
@@ -47,8 +86,8 @@ runModule('http://localhost:8080/paxos/learner/javascript-dt/' + Math.random(), 
 proposerReceived = [];
 latestProposedTimePeriod = 0;
 
-runModule('http://localhost:8080/paxos/proposer/javascript-dt/' + Math.random(), function(currMessage, respond) {
-  console.log('proposer currMessage: ' + JSON.stringify(currMessage));
+runModule('http://localhost:8080/paxos/proposer/js-dt/' + myId, function(currMessage, respond) {
+  logMessage('proposer-messages', 'proposer-received', 'Received ' + JSON.stringify(currMessage));
 
   if (currMessage.timePeriod <= latestProposedTimePeriod) { return; }
 
@@ -74,6 +113,7 @@ runModule('http://localhost:8080/paxos/proposer/javascript-dt/' + Math.random(),
         proposedValue = prevMessage.lastAcceptedValue;
     }
 
+    logMessage('proposer-messages', 'proposer-proposed', 'Proposed value \'' + proposedValue + '\'');
     respond({'type':'proposed','timePeriod':currMessage.timePeriod,'value':proposedValue});
     latestProposedTimePeriod = currMessage.timePeriod;
     haveProposed = true;
@@ -83,6 +123,7 @@ runModule('http://localhost:8080/paxos/proposer/javascript-dt/' + Math.random(),
 
 });
 
+/*
 maxAccepted = -1;
 maxAcceptedValue = '';
 maxPromised = -1;
@@ -116,11 +157,9 @@ runModule('http://localhost:8080/paxos/acceptor/brian', function(currMessage, re
   }
   
 });
+*/
 
 </script>
-</head>
-<body>
-Go and look at the JS console.
 </body>
 </html>
 
