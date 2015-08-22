@@ -17,44 +17,44 @@ import qualified Data.ByteString.Lazy as BL
 import Data.Tuple.Utils
 import Text.Printf
 
-type ProposalId = Int
+type TimePeriod = Int
 type AcceptorId = String
 type Value = String
 
-data PrepareMessage = Prepare ProposalId
+data PrepareMessage = Prepare TimePeriod
   deriving (Show, Eq)
 
-data AcceptedMessage = Accepted ProposalId AcceptorId Value
+data AcceptedMessage = Accepted TimePeriod AcceptorId Value
   deriving (Show, Eq)
 
 data LearnerState = LearnerState [AcceptedMessage]
 
 learner :: (MonadState LearnerState m, MonadWriter [String] m) => AcceptedMessage -> m ()
-learner newMessage@(Accepted proposalId acceptorId value) = do
+learner newMessage@(Accepted timePeriod acceptorId value) = do
   LearnerState previousMessages <- get
   put $ LearnerState $ newMessage : previousMessages
   when (any isMatch previousMessages) $ tell [value]
 
-  where isMatch (Accepted proposalId' acceptorId' _)
-          | proposalId /= proposalId' = False
+  where isMatch (Accepted timePeriod' acceptorId' _)
+          | timePeriod /= timePeriod' = False
           | acceptorId == acceptorId' = False
           | otherwise                 = True
 
-data PromiseType = Free | Bound ProposalId Value deriving (Show, Eq)
-data PromisedMessage = Promised ProposalId AcceptorId PromiseType deriving (Show, Eq)
-data ProposedMessage = Proposed ProposalId Value deriving (Show, Eq)
+data PromiseType = Free | Bound TimePeriod Value deriving (Show, Eq)
+data PromisedMessage = Promised TimePeriod AcceptorId PromiseType deriving (Show, Eq)
+data ProposedMessage = Proposed TimePeriod Value deriving (Show, Eq)
 
-data ProposerState = ProposerState (S.Set ProposalId) [PromisedMessage]
+data ProposerState = ProposerState (S.Set TimePeriod) [PromisedMessage]
 
 proposer :: (MonadState ProposerState m, MonadWriter [ProposedMessage] m, MonadReader Value m, Functor m) => PromisedMessage -> m ()
-proposer newMessage@(Promised proposalId acceptorId promiseType) = do
+proposer newMessage@(Promised timePeriod acceptorId promiseType) = do
   ProposerState proposalsMade previousMessages <- get
-  unless (S.member proposalId proposalsMade) $ do
+  unless (S.member timePeriod proposalsMade) $ do
     put $ ProposerState proposalsMade $ newMessage : previousMessages
     void $ runMaybeT $ forM_ previousMessages proposeValueIfMatch
 
   where
-  proposeValueIfMatch (Promised proposalId' acceptorId' promiseType') = when isMatch $ do
+  proposeValueIfMatch (Promised timePeriod' acceptorId' promiseType') = when isMatch $ do
       value <- case (promiseType, promiseType') of
         (Bound pid1 val1, Bound pid2 val2)
           | pid1 < pid2   -> return val2
@@ -62,50 +62,47 @@ proposer newMessage@(Promised proposalId acceptorId promiseType) = do
         (Bound _ val1, _) -> return val1
         (_, Bound _ val2) -> return val2
         _                 -> ask
-      tell [Proposed proposalId value]
-      modify $ \(ProposerState proposalsMade msgs) -> ProposerState (S.insert proposalId proposalsMade) msgs
+      tell [Proposed timePeriod value]
+      modify $ \(ProposerState proposalsMade msgs) -> ProposerState (S.insert timePeriod proposalsMade) msgs
       mzero
     where isMatch
-            | proposalId /= proposalId' = False
+            | timePeriod /= timePeriod' = False
             | acceptorId == acceptorId' = False
             | otherwise                 = True
 
-data AcceptorState = AcceptorState (Maybe ProposalId) PromiseType
+data AcceptorState = AcceptorState (Maybe TimePeriod) PromiseType
 
 acceptor
   :: (MonadState AcceptorState m, MonadWriter [Either PromisedMessage AcceptedMessage] m, MonadReader AcceptorId m, Functor m)
   => Either PrepareMessage ProposedMessage -> m ()
 
-acceptor (Left (Prepare proposalId)) = do
+acceptor (Left (Prepare timePeriod)) = do
   AcceptorState maybeMaxPromised promiseType <- get
   case promiseType of
-    Bound proposalId' _ | proposalId <= proposalId' -> return ()
+    Bound timePeriod' _ | timePeriod <= timePeriod' -> return ()
     _ -> do
       myName <- ask
-      tell [Left $ Promised proposalId myName promiseType]
-      put $ AcceptorState (max maybeMaxPromised $ Just proposalId) promiseType
+      tell [Left $ Promised timePeriod myName promiseType]
+      put $ AcceptorState (max maybeMaxPromised $ Just timePeriod) promiseType
 
-acceptor (Right (Proposed proposalId value)) = do
+acceptor (Right (Proposed timePeriod value)) = do
   AcceptorState maybeMaxPromised promiseType <- get
-  when (maybeMaxPromised <= Just proposalId) $ case promiseType of
-    Bound proposalId' _ | proposalId <= proposalId' -> return ()
+  when (maybeMaxPromised <= Just timePeriod) $ case promiseType of
+    Bound timePeriod' _ | timePeriod <= timePeriod' -> return ()
     _ -> do
       myName <- ask
-      tell [Right $ Accepted proposalId myName value]
-      put $ AcceptorState maybeMaxPromised $ Bound proposalId value
+      tell [Right $ Accepted timePeriod myName value]
+      put $ AcceptorState maybeMaxPromised $ Bound timePeriod value
 
 main :: IO ()
 main = do
   logLock <- newMVar ()
 
-  forM_ ["alice", "brian", "chris"] $ forkIO . runAcceptor (AcceptorState Nothing Free)
+  forM_ ["alice", {- "brian", -} "chris"] $ forkIO . runAcceptor (AcceptorState Nothing Free)
   forM_ [0..4] $ forkIO . runLearner (LearnerState []) logLock
   forM_ [0..9] $ forkIO . runProposer (ProposerState S.empty [])
 
-  forM_ [1..] $ \proposalId -> do
-    threadDelay 10000000
-    postJSON "http://127.0.0.1:24192/nag"
-      $ object ["type" .= ("prepare" :: String), "proposal" .= (proposalId :: Integer)]
+  forever $ threadDelay 100000000
 
 getJSON :: FromJSON a => String -> IO a
 getJSON uri = do
@@ -135,7 +132,7 @@ ignoringExceptions
 runLearner :: LearnerState -> MVar () -> Int -> IO a
 runLearner s0 logLock ident = go s0
   where
-  uri = "http://127.0.0.1:24192/learner/" ++ show ident
+  uri = "http://127.0.0.1:24192/learner/haskell-dt/" ++ show ident
   go s = do
     acceptedMessage <- getJSON uri
     let ((),s',outputs) = runRWS (learner acceptedMessage) () s
@@ -145,27 +142,27 @@ runLearner s0 logLock ident = go s0
 
 instance FromJSON AcceptedMessage where
   parseJSON = withObject "AcceptedMessage" $ \o -> Accepted
-    <$> o .: "proposal"
+    <$> o .: "timePeriod"
     <*> o .: "by"
     <*> o .: "value"
 
 instance FromJSON PromisedMessage where
   parseJSON = withObject "PromisedMessage" $ \o -> Promised
-    <$> o .: "proposal"
+    <$> o .: "timePeriod"
     <*> o .: "by"
-    <*> ((Bound <$> o .: "max-accepted-proposal" <*> o .: "max-accepted-value") <|> pure Free)
+    <*> ((Bound <$> o .: "lastAcceptedTimePeriod" <*> o .: "lastAcceptedValue") <|> pure Free)
 
 instance ToJSON ProposedMessage where
-  toJSON (Proposed proposalId value) = object
+  toJSON (Proposed timePeriod value) = object
     [ "type" .= ("proposed" :: String)
-    , "proposal" .= proposalId
+    , "timePeriod" .= timePeriod
     , "value" .= value
     ]
 
 runProposer :: ProposerState -> Int -> IO a
 runProposer s0 ident = go s0
   where
-  uri = "http://127.0.0.1:24192/proposer/" ++ show ident
+  uri = "http://127.0.0.1:24192/proposer/hasell-dt/" ++ show ident
   go s = do
     promisedMessage <- getJSON uri
     let ((),s',outputs) = runRWS (proposer promisedMessage) ("value from proposer " ++ show ident) s
@@ -191,27 +188,27 @@ instance FromJSON AcceptorReceived where
   parseJSON = withObject "AcceptorReceived" $ \o -> do
     msgType <- o .: "type"
     if msgType == ("prepare" :: String)
-      then ARLeft  <$> (Prepare <$> o .: "proposal")
-      else ARRight <$> (Proposed <$> o .: "proposal" <*> o .: "value")
+      then ARLeft  <$> (Prepare <$> o .: "timePeriod")
+      else ARRight <$> (Proposed <$> o .: "timePeriod" <*> o .: "value")
 
 instance ToJSON AcceptorSent where
-  toJSON (ASLeft (Promised proposal acceptorId Free)) = object
+  toJSON (ASLeft (Promised timePeriod acceptorId Free)) = object
     [ "type" .= ("promised" :: String)
-    , "proposal" .= proposal
+    , "timePeriod" .= timePeriod
     , "by" .= acceptorId
     ]
 
-  toJSON (ASLeft (Promised proposal acceptorId (Bound proposal' value'))) = object
+  toJSON (ASLeft (Promised timePeriod acceptorId (Bound timePeriod' value'))) = object
     [ "type" .= ("promised" :: String)
-    , "proposal" .= proposal
+    , "timePeriod" .= timePeriod
     , "by" .= acceptorId
-    , "max-accepted-proposal" .= proposal'
-    , "max-accepted-value" .= value'
+    , "lastAcceptedTimePeriod" .= timePeriod'
+    , "lastAcceptedValue" .= value'
     ]
 
-  toJSON (ASRight (Accepted proposal acceptorId value)) = object
+  toJSON (ASRight (Accepted timePeriod acceptorId value)) = object
     [ "type" .= ("accepted" :: String)
-    , "proposal" .= proposal
+    , "timePeriod" .= timePeriod
     , "by" .= acceptorId
     , "value" .= value
     ]
