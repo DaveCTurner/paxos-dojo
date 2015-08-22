@@ -173,10 +173,13 @@ unixEpoch = UTCTime (fromGregorian 1970 01 01) 0
 
 main :: IO ()
 main = do
-  outgoingQueueByNameVar <- newTVarIO M.empty
-  incomingQueue          <- newTQueueIO
-  logLock                <- newMVar ()
-  configVar              <- newTVarIO $ Config
+  outgoingQueueByNameVar   <- newTVarIO M.empty
+  incomingQueue            <- newTQueueIO
+  logLock                  <- newMVar ()
+  minTimePeriodVar         <- newTVarIO 0
+  proposersByTimePeriodVar <- newTVarIO M.empty
+  nextProposersVar         <- newTVarIO []
+  configVar                <- newTVarIO $ Config
     { cGetTimeoutSec  = 10
     , cQueueExpirySec = 60
     , cProposerCount  = 10
@@ -281,13 +284,18 @@ main = do
         threadDelay $ nagPeriodSec * 1000000
 
         now <- getCurrentTime
-        let value = Prepare Nothing $ floor $ diffUTCTime now unixEpoch
+        let timePeriod = floor $ diffUTCTime now unixEpoch
+            value = Prepare Nothing timePeriod
         logMessage now "/nag" $ "POST " ++ (T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode value)
-        atomically $ writeTQueue incomingQueue ("/nag", now, value))
+        atomically $ do
+          let minTimePeriod = timePeriod - 300
+          modifyTVar minTimePeriodVar $ max minTimePeriod
+          modifyTVar proposersByTimePeriodVar $ snd . M.split minTimePeriod
+          writeTQueue incomingQueue ("/nag", now, value))
 
     $ \_ -> forever $ join $ atomically $ do
 
-        (incomingQueue, receivedTime, value) <- readTQueue incomingQueue
+        (incomingQueueName, receivedTime, value) <- readTQueue incomingQueue
         Config{..} <- readTVar configVar
 
         let staleIfNotQueriedSince = addUTCTime (fromIntegral $ negate cQueueExpirySec) receivedTime
@@ -295,25 +303,46 @@ main = do
             <$> readTVar outgoingQueueByNameVar
         writeTVar outgoingQueueByNameVar activeQueuesMap
 
-        let isRelevantProposer timePeriod
-              = (`elem` [ T.encodeUtf8 (nodeType <> T.pack (show (mod timePeriod cProposerCount)))
-                        | nodeType <- ["/proposer/", "/general/"]])
+        let prefixIsOneOf prefixes qn = or [ B.isPrefixOf (T.encodeUtf8 prefix) qn | prefix <- prefixes ]
 
-            prefixIsOneOf prefixes qn = or [ B.isPrefixOf (T.encodeUtf8 prefix) qn | prefix <- prefixes ]
+            isProposer = prefixIsOneOf ["/proposer/", "/general/"]
             isAcceptor = prefixIsOneOf ["/acceptor/", "/general/"]
             isLearner  = prefixIsOneOf ["/learner/",  "/general/"]
 
-            shouldOutputTo = case value of
-              Prepare  {}                      -> isAcceptor
-              Proposed {}                      -> isAcceptor
-              Accepted {}                      -> isLearner
-              MultiPromised _ timePeriod _     -> isRelevantProposer timePeriod
-              FreePromised  _ timePeriod _     -> isRelevantProposer timePeriod
-              BoundPromised _ timePeriod _ _ _ -> isRelevantProposer timePeriod
+            findRelevantProposer timePeriod = do
+              minTimePeriod <- readTVar minTimePeriodVar
+              if timePeriod <= minTimePeriod
+                then return $ const False
+                else do
+                  proposersByTimePeriod <- readTVar proposersByTimePeriodVar
+                  case M.lookup timePeriod proposersByTimePeriod of
+                    Just proposer -> return (== proposer)
+                    Nothing -> do
+                      nextProposers <- readTVar nextProposersVar
+                      case nextProposers of
+                        (proposer:otherProposers) -> do
+                          writeTVar nextProposersVar otherProposers
+                          writeTVar proposersByTimePeriodVar $ M.insert timePeriod proposer proposersByTimePeriod
+                          return (== proposer)
+                        [] -> do
+                          case filter isProposer $ M.keys activeQueuesMap of
+                            [] -> return $ const False
+                            (proposer:otherProposers) -> do
+                              writeTVar nextProposersVar otherProposers
+                              writeTVar proposersByTimePeriodVar $ M.insert timePeriod proposer proposersByTimePeriod
+                              return (== proposer)
 
-            outputQueues = [ queue
+        shouldOutputTo <- case value of
+          Prepare  {}                      -> return isAcceptor
+          Proposed {}                      -> return isAcceptor
+          Accepted {}                      -> return isLearner
+          MultiPromised _ timePeriod _     -> findRelevantProposer timePeriod
+          FreePromised  _ timePeriod _     -> findRelevantProposer timePeriod
+          BoundPromised _ timePeriod _ _ _ -> findRelevantProposer timePeriod
+
+        let outputQueues = [ queue
                            | (queueName, (_, queue)) <- M.toList activeQueuesMap
-                           , queueName /= incomingQueue
+                           , queueName /= incomingQueueName
                            , shouldOutputTo queueName ]
 
         return $ do

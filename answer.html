@@ -35,7 +35,7 @@ runModule('http://localhost:8080/paxos/learner/5', function(currMessage, respond
 
   var haveLearned = false;
   learnerReceived.forEach(function(prevMessage) {
-    if (!haveLearned && currMessage.proposal === prevMessage.proposal && currMessage.by != prevMessage.by) {
+    if (!haveLearned && currMessage.timePeriod === prevMessage.timePeriod && currMessage.by != prevMessage.by) {
       console.log('learned value: \'' + currMessage.value + '\'');
       haveLearned = true;
     }
@@ -45,38 +45,37 @@ runModule('http://localhost:8080/paxos/learner/5', function(currMessage, respond
 });
 
 proposerReceived = [];
-maxProposed = 0;
+currTimePeriod = 0;
 
 runModule('http://localhost:8080/paxos/proposer/1', function(currMessage, respond) {
   console.log('proposer currMessage: ' + JSON.stringify(currMessage));
-  proposerReceived.push(currMessage);
 
-  if (currMessage.proposal <= maxProposed) { return; }
+  if (currMessage.timePeriod <= currTimePeriod) { return; }
+  currTimePeriod = currMessage.timePeriod
 
   var haveProposed = false;
   proposerReceived.forEach(function(prevMessage) {
     if (haveProposed) { return; }
-    if (currMessage.proposal != prevMessage.proposal) { return; }
+    if (currMessage.timePeriod != prevMessage.timePeriod) { return; }
     if (currMessage.by == prevMessage.by) { return; }
 
-    var proposedValue = "Value from proposer 1";
+    var proposedValue = "Value from Javascript proposer";
 
-    if (currMessage['max-accepted-proposal']) {
-      if (prevMessage['max-accepted-proposal']) {
-        if (currMessage['max-accepted-proposal'] > prevMessage['max-accepted-proposal']) {
-          proposedValue = currMessage['max-accepted-value'];
+    if (currMessage.lastAcceptedTimePeriod) {
+      if (prevMessage.lastAcceptedTimePeriod) {
+        if (currMessage.lastAcceptedTimePeriod > prevMessage.lastAcceptedTimePeriod) {
+          proposedValue = currMessage.lastAcceptedValue;
         } else {
-          proposedValue = prevMessage['max-accepted-value'];
+          proposedValue = prevMessage.lastAcceptedValue;
         }
       } else {
-        proposedValue = currMessage['max-accepted-value'];
+        proposedValue = currMessage.lastAcceptedValue;
       }
-    } else if (prevMessage['max-accepted-proposal']) {
-        proposedValue = prevMessage['max-accepted-value'];
+    } else if (prevMessage.lastAcceptedTimePeriod) {
+        proposedValue = prevMessage.lastAcceptedValue;
     }
 
-    respond({'type':'proposed','proposal':currMessage.proposal,'value':proposedValue});
-    maxProposed = currMessage.proposal
+    respond({'type':'proposed','timePeriod':currMessage.timePeriod,'value':proposedValue});
     haveProposed = true;
   });
 
@@ -92,23 +91,28 @@ runModule('http://localhost:8080/paxos/acceptor/brian', function(currMessage, re
   console.log('acceptor currMessage: ' + JSON.stringify(currMessage));
 
   if (currMessage.type === 'prepare') {
-    if (currMessage.proposal <= maxAccepted) { return; }
+    if (currMessage.timePeriod <= maxAccepted) { return; }
+    if (currMessage.timePeriod > maxPromised) { maxPromised = currMessage.timePeriod; }
     
-    if (maxAccepted < 0) {
-      respond({'type':'promised','proposal':currMessage.proposal,'by':'brian'});
-    } else {
-      respond({'type':'promised','proposal':currMessage.proposal,'by':'brian','max-accepted-value':maxAcceptedValue,'max-accepted-proposal':maxAccepted});
+    currMessage.type = 'promised';
+    currMessage.by   = 'brian';
+    
+    if (maxAccepted >= 0) {
+      currMessage.lastAcceptedTimePeriod = maxAccepted;
+      currMessage.lastAcceptedValue      = maxAcceptedValue;
     }
-    
-    if (currMessage.proposal > maxPromised) { maxPromised = currMessage.proposal; }
+    respond(currMessage);
   
   } else if (currMessage.type === 'proposed') {
-    if (currMessage.proposal < maxPromised) { return; }
-    if (currMessage.proposal < maxAccepted) { return; }
-    respond({'type':'accepted','proposal':currMessage.proposal,'by':'brian','value':currMessage.value});
+    if (currMessage.timePeriod < maxPromised) { return; }
+    if (currMessage.timePeriod < maxAccepted) { return; }
 
-    maxAccepted = currMessage.proposal;
+    maxAccepted = currMessage.timePeriod;
     maxAcceptedValue = currMessage.value;
+
+    currMessage.type = 'accepted';
+    currMessage.by   = 'brian';
+    respond(currMessage);
   }
   
 });
