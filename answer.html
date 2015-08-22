@@ -45,13 +45,12 @@ runModule('http://localhost:8080/paxos/learner/javascript-dt/' + Math.random(), 
 });
 
 proposerReceived = [];
-currTimePeriod = 0;
+latestProposedTimePeriod = 0;
 
 runModule('http://localhost:8080/paxos/proposer/javascript-dt/' + Math.random(), function(currMessage, respond) {
   console.log('proposer currMessage: ' + JSON.stringify(currMessage));
 
-  if (currMessage.timePeriod <= currTimePeriod) { return; }
-  currTimePeriod = currMessage.timePeriod
+  if (currMessage.timePeriod <= latestProposedTimePeriod) { return; }
 
   var haveProposed = false;
   proposerReceived.forEach(function(prevMessage) {
@@ -76,6 +75,7 @@ runModule('http://localhost:8080/paxos/proposer/javascript-dt/' + Math.random(),
     }
 
     respond({'type':'proposed','timePeriod':currMessage.timePeriod,'value':proposedValue});
+    latestProposedTimePeriod = currMessage.timePeriod;
     haveProposed = true;
   });
 
