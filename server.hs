@@ -212,16 +212,13 @@ main = do
 
   let logMessage :: UTCTime -> MessageDirection -> B.ByteString -> String -> IO ()
       logMessage time messageDirection queueName message = void $ forkIO $ withMVar logLock $ \_ -> do
-        putStrLn $ printf "%s%-13s%s %s%c%s%s%-15s%s %s"
+        putStrLn $ printf "%s%-13s%s %s%c%-15s%s %s"
           (setSGRCode [ SetColor Foreground Vivid Magenta ])
           (take 13 $ drop 11 $ formatISO8601Micros time)
           (setSGRCode [Reset])
 
           (setSGRCode [ SetColor Foreground Vivid $ case messageDirection of Inbound -> Red; Outbound -> Green; Notification -> Yellow ])
           (case messageDirection of Inbound -> '<'; Outbound -> '>'; Notification -> '!')
-          (setSGRCode [Reset])
-
-          (setSGRCode [ SetColor Foreground Vivid Cyan ])
           (T.unpack $ T.decodeUtf8 queueName)
           (setSGRCode [Reset])
 
