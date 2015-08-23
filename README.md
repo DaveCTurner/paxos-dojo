@@ -100,13 +100,6 @@ For the sake of interoperability, in our implementation the modules communicate
 with each other using JSON-formatted messages. This section gives the details
 of the messages each module may send and receive.
 
-Since the protocol continues to work even if some messages are lost, it is ok
-for modules to choose to ignore a received message, and not to send a message
-even if this section permits it. On the other hand, everything goes wrong if
-you send a message that isn't permitted, so it is important to err on the side
-of caution. That said, if too many messages are ignored then agreement will
-never be reached, so don't be too cautious!
-
 ### Learner
 
 The Learner is the simplest module. Roughly speaking, it collects messages
