@@ -237,7 +237,7 @@ Here is an example of the expected behaviour:
   // nothing proposed - different $TIMEPERIOD from all earlier messages
 
 {"type":"promised","timePeriod":6,"by":"alice","lastAcceptedTimePeriod":1,"lastAcceptedValue":"AliceCo"}
-  -> {"type":"proposed","timePeriod":6,"value":"brian's value"}
+  -> {"type":"proposed","timePeriod":6,"value":"BrianCo"}
   // proposal made using $LAV from Brian's promise as it has the greater $LATP (so is fresher than Alice's)
 ```
 
