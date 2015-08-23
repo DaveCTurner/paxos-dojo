@@ -102,10 +102,9 @@ of the messages each module may send and receive.
 
 ### Learner
 
-The Learner is the simplest module. Roughly speaking, it collects messages
-indicating that certain values have been accepted and when it receives these
-messages from a majority of Acceptors (i.e. two of them) it learns that
-consensus has been reached.
+The Learner is the simplest module. Roughly speaking, it keeps track of which
+values have been accepted, and when it sees that a a majority of Acceptors
+(i.e. two of them) are in agreement, it learns that consensus has been reached.
 
 More precisely, it receives messages that look like this:
 
@@ -146,9 +145,9 @@ The Proposer is the next simplest module. Its job is to propose ideas for the
 name of our startup. It knows your idea, which we'll call `$MYVALUE` here.
 Roughly speaking, it proposes `$MYVALUE` if it hasn't receieved any other
 ideas, but in the interests of harmony it prefers to agree with other
-proposers' ideas when it hears about them. It also only makes proposals when
-they have a good chance of being accepted by a majority of Acceptors. It is, in
-short, a little bit of a wimp.
+proposers' ideas when it hears about them. It also only makes a proposal when
+it's received promises from a majority of Acceptors that they will accept it.
+It is, in short, a little bit of a wimp.
 
 More precisely, it receives messages that look like one of these (which are
 sent by Acceptors):
