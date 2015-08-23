@@ -243,10 +243,14 @@ Here is an example of the expected behaviour:
 
 ### Acceptor
 
-The Acceptor is the most complicated module. It has a name, `$NAME` (one of
-`"alice"`, `"brian"` or `"chris"`) which will be agreed in advance as it must
-not clash with that of the other Acceptors. It must include its name in the
-`by` field of any messages it sends.
+The Acceptor is the most complicated module. Its job is to accept proposals,
+but it also makes promises about which proposals it will accept in the future
+in order to persuade the somewhat timid Proposer to make the proposals in the
+first place.
+
+It has a name, `$NAME` (one of `"alice"`, `"brian"` or `"chris"`) which will be
+agreed in advance as it must not clash with that of the other Acceptors. It
+must include its name in the `by` field of any messages it sends.
 
 It receives two kinds of message:
 
