@@ -76,7 +76,7 @@ time period by broadcasting a message back to all the Acceptors.
 <img src='diagrams/004-propose.png' width='400px' />
 
 Since the Acceptors have not made any further promises, they all accept the
-proposed value by sendin messages to the Learner. Once the Learner receives
+proposed value by sending messages to the Learner. Once the Learner receives
 these messages for the same time period from a majority of Acceptors (i.e. two
 of them), it has learned that this value is the one that the system has agreed
 upon.
