@@ -147,7 +147,7 @@ Roughly speaking, it proposes `$MYVALUE` if it hasn't receieved any other
 ideas, but in the interests of harmony it prefers to agree with other
 proposers' ideas when it hears about them. It also only makes a proposal when
 it's received promises from a majority of Acceptors that they will accept it.
-It is, in short, a little bit of a wimp.
+It is, in short, rather timid.
 
 More precisely, it receives messages that look like one of these (which are
 sent by Acceptors):
