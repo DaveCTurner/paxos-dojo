@@ -13,8 +13,18 @@ while True:
     if currMessage['timePeriod'] != prevMessage['timePeriod']: continue
     if currMessage['by'] == prevMessage['by']: continue
 
-    proposedValue = myValue
-    if currMessage['lastAcceptedTimePeriod']:
-      proposedValue = currMessage['lastAcceptedTimePeriod']
+    proposedValue = "Value from Python proposer"
+
+    currLATP = currMessage.get('lastAcceptedTimePeriod', -1)
+    prevLATP = prevMessage.get('lastAcceptedTimePeriod', -1)
+
+    if currLATP > 0:
+      proposedValue = currMessage['lastAcceptedValue']
+
+    if prevLATP > 0 and prevLATP > currLATP:
+      proposedValue = currMessage['lastAcceptedValue']
+
+    messenger.postMessage({'type':'proposed','timePeriod':currMessage['timePeriod'], 'value':proposedValue})
+    break
 
   received.append(currMessage)
