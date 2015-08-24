@@ -1,21 +1,62 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-import Network.HTTP.Client
-import Network.HTTP.Types
-import Data.Aeson hiding (Value)
 import Control.Applicative
 import Control.Concurrent
-import Test.Hspec
-import Data.List
 import Control.Exception
 import Control.Monad
 import Control.Monad.RWS
 import Control.Monad.Trans.Maybe
-import qualified Data.Set as S
-import qualified Data.ByteString.Lazy as BL
+import Data.Aeson hiding (Value)
+import Data.Hashable
+import Data.Int
+import Data.List
 import Data.Tuple.Utils
+import Network.HTTP.Client
+import Network.HTTP.Types
+import Options.Applicative
+import System.Posix
+import Test.Hspec
 import Text.Printf
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.Set as S
+
+data Config = Config
+  { cBaseURI :: String
+  , cAcceptorNames :: [String]
+  , cProposedValues :: [String]
+  } deriving (Show, Eq)
+
+optParser :: ParserInfo Config
+optParser = info (helper <*> (Config
+  <$>       strOption   (long "base-uri" <> metavar "URI"   <> help "Use messaging server with this base URI")
+  <*> many (strOption   (long "acceptor" <> metavar "NAME"  <> help "Run this acceptor (may be repeated)"))
+  <*> many (strOption   (long "propose"  <> metavar "VALUE" <> help "Value to propose (may be repeated)"))))
+
+  (fullDesc <> progDesc "Paxos Dojo client")
+
+main :: IO ()
+main = execParser optParser >>= \Config{..} -> do
+  logLock <- newMVar ()
+  CPid processID <- getProcessID
+  let uriSource = UriSource cBaseURI processID
+
+  forM_ cAcceptorNames  $ forkIO . runAcceptor uriSource (AcceptorState Nothing Free)
+  forM_ cProposedValues $ forkIO . runProposer uriSource (ProposerState S.empty [])
+
+  runLearner uriSource (LearnerState []) logLock
+
+data UriSource = UriSource String Int32
+
+learnerUri :: UriSource -> String
+learnerUri (UriSource base pid) = printf "%s/learner/dt-hs-%05d" base pid
+
+proposerUri :: UriSource -> String -> String
+proposerUri (UriSource base pid) val = printf "%s/proposer/dt-hs-%05d-%05d" base pid (hash val `mod` 10000)
+
+acceptorUri :: UriSource -> String -> String
+acceptorUri (UriSource base pid) name = printf "%s/acceptor/dt-hs-%05d-%s" base pid name
 
 type TimePeriod = Int
 type AcceptorId = String
@@ -94,16 +135,6 @@ acceptor (Right (Proposed timePeriod value)) = do
       tell [Right $ Accepted timePeriod myName value]
       put $ AcceptorState maybeMaxPromised $ Bound timePeriod value
 
-main :: IO ()
-main = do
-  logLock <- newMVar ()
-
-  forM_ ["alice", "brian", "chris"] $ forkIO . runAcceptor (AcceptorState Nothing Free)
-  forM_ [0..4] $ forkIO . runLearner (LearnerState []) logLock
-  forM_ [0..3] $ forkIO . runProposer (ProposerState S.empty [])
-
-  forever $ threadDelay 100000000
-
 getJSON :: FromJSON a => String -> IO a
 getJSON uri = do
   manager <- newManager defaultManagerSettings
@@ -129,15 +160,15 @@ ignoringExceptions
   ignoreException = const ()
   handleWith f = handle (const (return Nothing) . f)
 
-runLearner :: LearnerState -> MVar () -> Int -> IO a
-runLearner s0 logLock ident = go s0
+runLearner :: UriSource -> LearnerState -> MVar () -> IO a
+runLearner uriSource s0 logLock = go s0
   where
-  uri = "http://127.0.0.1:24192/learner/hs-dt/" ++ show ident
+  uri = learnerUri uriSource
   go s = do
     acceptedMessage <- getJSON uri
     let ((),s',outputs) = runRWS (learner acceptedMessage) () s
     forM_ outputs $ \learnedValue -> withMVar logLock $ \_
-      -> putStrLn $ printf "Learner %d learned value '%s'" ident learnedValue
+      -> putStrLn $ printf "Learned value '%s'" learnedValue
     go s'
 
 instance FromJSON AcceptedMessage where
@@ -159,24 +190,24 @@ instance ToJSON ProposedMessage where
     , "value" .= value
     ]
 
-runProposer :: ProposerState -> Int -> IO a
-runProposer s0 ident = go s0
+runProposer :: UriSource -> ProposerState -> String -> IO a
+runProposer uriSource s0 value = go s0
   where
-  uri = "http://127.0.0.1:24192/proposer/hs-dt/" ++ show ident
+  uri = proposerUri uriSource value
   go s = do
     promisedMessage <- getJSON uri
-    let ((),s',outputs) = runRWS (proposer promisedMessage) ("value from proposer " ++ show ident) s
+    let ((),s',outputs) = runRWS (proposer promisedMessage) value s
     forM_ outputs $ postJSON uri
     go s'
 
-runAcceptor :: AcceptorState -> String -> IO a
-runAcceptor s0 ident = go s0
+runAcceptor :: UriSource -> AcceptorState -> String -> IO a
+runAcceptor uriSource s0 name = go s0
   where
-  uri = "http://127.0.0.1:24192/acceptor/" ++ ident
+  uri = acceptorUri uriSource name
   go s = do
     acceptorReceivedMessage <- getJSON uri
     let msg' = case acceptorReceivedMessage of ARLeft m -> Left m; ARRight m -> Right m
-    let ((),s',outputs) = runRWS (acceptor msg') ident s
+    let ((),s',outputs) = runRWS (acceptor msg') name s
     forM_ outputs $ postJSON uri . either ASLeft ASRight
     go s'
 
