@@ -1,4 +1,5 @@
 import urllib2
+import httplib
 import json
 import time
 
@@ -20,6 +21,9 @@ class Messenger:
         print e
         time.sleep(2.0)
       except urllib2.URLError as e:
+        print e
+        time.sleep(2.0)
+      except httplib.BadStatusLine as e:
         print e
         time.sleep(2.0)
 
