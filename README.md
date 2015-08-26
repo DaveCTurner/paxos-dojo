@@ -103,7 +103,7 @@ of the messages each module may send and receive.
 ### Learner
 
 The Learner is the simplest module. Roughly speaking, it keeps track of which
-values have been accepted, and when it sees that a a majority of Acceptors
+values have been accepted, and when it sees that a majority of Acceptors
 (i.e. two of them) are in agreement, it learns that consensus has been reached.
 
 More precisely, it receives messages that look like this:
