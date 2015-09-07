@@ -23,6 +23,7 @@ import System.Random
 import System.Console.ANSI
 import Text.Printf
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -223,13 +224,19 @@ showMaybeInstance :: Maybe InstanceId -> String
 showMaybeInstance Nothing = ""
 showMaybeInstance (Just i) = printf "%6s" ("[" <> show i <> "]")
 
+showValue :: Value -> String
+showValue = T.unpack . T.decodeUtf8 . BL.toStrict . encode
+
+showAccr :: AcceptorId -> String
+showAccr = (" by " ++) . T.unpack
+
 formatForLog :: PaxosMessage -> String
 formatForLog (Prepare mi tp)                = startLogLine Vivid Red    "PREP" mi       tp
-formatForLog (MultiPromised  i tp a)        = startLogLine Dull Yellow  "PROM" (Just i) tp ++ " by " ++ show a ++ " (multi)"
-formatForLog (FreePromised  mi tp a)        = startLogLine Dull Yellow  "PROM" mi       tp ++ " by " ++ show a ++ " (free)"
-formatForLog (BoundPromised mi tp a tp' v') = startLogLine Dull Yellow  "PROM" mi       tp ++ " by " ++ show a ++ " (last accepted " ++ show v' ++ " at " ++ show tp' ++ ")"
-formatForLog (Proposed      mi      tp  v)  = startLogLine Vivid Yellow "PROP" mi       tp ++ " = " ++ show v
-formatForLog (Accepted      mi    a tp  v)  = startLogLine Vivid Green  "ACCD" mi       tp ++ " by " ++ show a ++ ": " ++ show v
+formatForLog (MultiPromised  i tp a)        = startLogLine Dull Yellow  "PROM" (Just i) tp ++ showAccr a ++ " (includes future instances)"
+formatForLog (FreePromised  mi tp a)        = startLogLine Dull Yellow  "PROM" mi       tp ++ showAccr a ++ " (nothing accepted yet)"
+formatForLog (BoundPromised mi tp a tp' v') = startLogLine Dull Yellow  "PROM" mi       tp ++ showAccr a ++ " (last accepted " ++ showValue v' ++ " at " ++ show tp' ++ ")"
+formatForLog (Proposed      mi      tp  v)  = startLogLine Vivid Yellow "PROP" mi       tp ++ " = " ++ showValue v
+formatForLog (Accepted      mi    a tp  v)  = startLogLine Vivid Green  "ACCD" mi       tp ++ " = " ++ showValue v ++ showAccr a
 
 startLogLine :: ColorIntensity -> Color -> String -> Maybe InstanceId -> TimePeriod -> String
 startLogLine intensity typeColor typeName maybeInstance timePeriod = printf "%s%4s%s%s %s%10s%s"
