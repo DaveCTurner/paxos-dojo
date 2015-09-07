@@ -51,13 +51,13 @@ main = execParser optParser >>= \Config{..} -> do
 data UriSource = UriSource String Int32
 
 learnerUri :: UriSource -> String
-learnerUri (UriSource base pid) = printf "%s/learner/dt-hs-%05d" base pid
+learnerUri (UriSource base pid) = printf "%s/l/dt-hs-%05d" base pid
 
 proposerUri :: UriSource -> String -> String
-proposerUri (UriSource base pid) val = printf "%s/proposer/dt-hs-%05d-%05d" base pid (hash val `mod` 10000)
+proposerUri (UriSource base pid) val = printf "%s/p/dt-hs-%05d-%05d" base pid (hash val `mod` 10000)
 
 acceptorUri :: UriSource -> String -> String
-acceptorUri (UriSource base pid) name = printf "%s/acceptor/dt-hs-%05d-%s" base pid name
+acceptorUri (UriSource base pid) name = printf "%s/a/dt-hs-%05d-%s" base pid name
 
 type TimePeriod = Int
 type AcceptorId = String
