@@ -8,7 +8,7 @@ import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Control.Concurrent.Timeout
 import Control.Monad
-import Data.Aeson hiding (Value)
+import Data.Aeson
 import Data.Aeson.Types (Pair)
 import Data.Hashable
 import Data.List (findIndex)
@@ -31,7 +31,6 @@ import qualified Data.Text.Encoding as T
 type InstanceId = Integer
 type TimePeriod = Integer
 type AcceptorId = T.Text
-type Value      = T.Text
 
 data PaxosMessage
   = Prepare       (Maybe InstanceId) TimePeriod
