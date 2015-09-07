@@ -350,7 +350,8 @@ main = do
 
         let prefixIsOneOf prefixes qn = or [ B.isPrefixOf (T.encodeUtf8 prefix) qn | prefix <- prefixes ]
 
-            isProposer = prefixIsOneOf ["/p/", "/proposer/", "/g/", "/general/"]
+            proposerPrefixes = ["/p/", "/proposer/", "/g/", "/general/"]
+            isProposer = prefixIsOneOf proposerPrefixes
             isAcceptor = prefixIsOneOf ["/a/", "/acceptor/", "/g/", "/general/"]
             isLearner  = prefixIsOneOf ["/l/", "/learner/",  "/g/", "/general/"]
 
@@ -380,6 +381,10 @@ main = do
                         Just partition -> \p -> mod (hash p) (length cPartitionedAcceptors) == partition
 
                   return $ \p -> isRelevantProposer p && isInCorrectPartition p
+
+            findRelevantProposer (CompoundTimePeriod [])  = return $ const False
+            findRelevantProposer (CompoundTimePeriod tps) = return (`elem` [T.encodeUtf8 (prefix <> T.pack (show p)) | prefix <- proposerPrefixes])
+              where p = last tps
 
         shouldOutputTo <- case value of
           Prepare  {}                      -> return isAcceptor
