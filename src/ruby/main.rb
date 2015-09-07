@@ -124,6 +124,8 @@ class Acceptor
       if @lastAccepted >= 0 then
         response['lastAcceptedTimePeriod'] = @lastAccepted
         response['lastAcceptedValue']      = @lastAcceptedValue
+      else
+        response['haveAccepted']           = false
       end
 
       @messenger.sendMessage(response)
