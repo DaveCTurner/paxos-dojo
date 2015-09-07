@@ -60,6 +60,8 @@ function makeAcceptor(name) {
       if (lastAccepted >= 0) {
         response.lastAcceptedTimePeriod = lastAccepted;
         response.lastAcceptedValue      = lastAcceptedValue;
+      } else {
+        response.haveAccepted = false;
       }
       respond(response);
     
