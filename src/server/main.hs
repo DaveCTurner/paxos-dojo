@@ -29,8 +29,9 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 
 type InstanceId = Integer
-type TimePeriod = Integer
 type AcceptorId = T.Text
+
+data TimePeriod = SimpleTimePeriod Integer | CompoundTimePeriod [Integer]
 
 data PaxosMessage
   = Prepare       (Maybe InstanceId) TimePeriod
@@ -59,6 +60,14 @@ instance FromJSON MessageType where
 
 instanceIfJust :: Maybe InstanceId -> [Pair]
 instanceIfJust = maybe [] $ return . (.=) "instance"
+
+instance ToJSON TimePeriod where
+  toJSON (SimpleTimePeriod tp)   = toJSON tp
+  toJSON (CompoundTimePeriod tp) = toJSON tp
+
+instance FromJSON TimePeriod where
+  parseJSON o = (SimpleTimePeriod   <$> parseJSON o)
+            <|> (CompoundTimePeriod <$> parseJSON o)
 
 instance ToJSON PaxosMessage where
   toJSON (Prepare maybeInstance timePeriod) = object $
@@ -165,7 +174,7 @@ instance FromJSON Config where
     <*> o .: "nag-period-sec"
     <*> o .: "partitioned-acceptors"
 
-data Status = Status Config Integer (M.Map TimePeriod B.ByteString) [B.ByteString] [(B.ByteString, UTCTime, Bool)]
+data Status = Status Config Integer (M.Map Integer B.ByteString) [B.ByteString] [(B.ByteString, UTCTime, Bool)]
 
 instance ToJSON Status where
   toJSON (Status config minTimePeriod proposersByTimePeriod nextProposers queues) = object
@@ -321,7 +330,7 @@ main = do
 
         now <- getCurrentTime
         let timePeriod = floor $ diffUTCTime now unixEpoch
-            value = Prepare Nothing timePeriod
+            value = Prepare Nothing $ SimpleTimePeriod timePeriod
         logMessage now Inbound "/nag" $ T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode value
         atomically $ do
           let minTimePeriod = timePeriod - 300
@@ -345,7 +354,7 @@ main = do
             isAcceptor = prefixIsOneOf ["/a/", "/acceptor/", "/g/", "/general/"]
             isLearner  = prefixIsOneOf ["/l/", "/learner/",  "/g/", "/general/"]
 
-            findRelevantProposer timePeriod = do
+            findRelevantProposer (SimpleTimePeriod timePeriod) = do
               minTimePeriod <- readTVar minTimePeriodVar
               if timePeriod <= minTimePeriod
                 then return $ const False
