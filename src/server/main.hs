@@ -138,7 +138,6 @@ instance FromJSON PaxosMessage where
 data Config = Config
   { cGetTimeoutSec  :: Integer
   , cQueueExpirySec :: Integer
-  , cProposerCount  :: Integer
   , cDropPercentage :: Double
   , cMinDelaySec    :: Int
   , cMaxDelaySec    :: Int
@@ -150,7 +149,6 @@ instance ToJSON Config where
   toJSON Config{..} = object
     [ "get-timeout-sec"  .= cGetTimeoutSec
     , "queue-expiry-sec" .= cQueueExpirySec
-    , "proposer-count"   .= cProposerCount
     , "drop-percentage"  .= cDropPercentage
     , "min-delay-sec"    .= cMinDelaySec
     , "max-delay-sec"    .= cMaxDelaySec
@@ -162,7 +160,6 @@ instance FromJSON Config where
   parseJSON = withObject "Config" $ \o -> Config
     <$> o .: "get-timeout-sec"
     <*> o .: "queue-expiry-sec"
-    <*> o .: "proposer-count"
     <*> o .: "drop-percentage"
     <*> o .: "min-delay-sec"
     <*> o .: "max-delay-sec"
@@ -209,7 +206,6 @@ main = do
   configVar                <- newTVarIO $ Config
     { cGetTimeoutSec  = 10
     , cQueueExpirySec = 60
-    , cProposerCount  = 10
     , cDropPercentage = 0
     , cMinDelaySec    = 0
     , cMaxDelaySec    = 0
