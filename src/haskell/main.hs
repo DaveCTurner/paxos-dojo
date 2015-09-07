@@ -12,6 +12,7 @@ import Data.Aeson hiding (Value)
 import Data.Hashable
 import Data.Int
 import Data.List
+import Data.Maybe
 import Data.Tuple.Utils
 import Network.HTTP.Client
 import Network.HTTP.Types
@@ -178,10 +179,12 @@ instance FromJSON AcceptedMessage where
     <*> o .: "value"
 
 instance FromJSON PromisedMessage where
-  parseJSON = withObject "PromisedMessage" $ \o -> Promised
-    <$> o .: "timePeriod"
-    <*> o .: "by"
-    <*> ((Bound <$> o .: "lastAcceptedTimePeriod" <*> o .: "lastAcceptedValue") <|> pure Free)
+  parseJSON = withObject "PromisedMessage" $ \o -> do
+    haveAccepted <- fromMaybe True <$> o .:? "haveAccepted"
+    Promised
+      <$> o .: "timePeriod"
+      <*> o .: "by"
+      <*> (if haveAccepted then Bound <$> o .: "lastAcceptedTimePeriod" <*> o .: "lastAcceptedValue" else pure Free)
 
 instance ToJSON ProposedMessage where
   toJSON (Proposed timePeriod value) = object
@@ -227,6 +230,7 @@ instance ToJSON AcceptorSent where
     [ "type" .= ("promised" :: String)
     , "timePeriod" .= timePeriod
     , "by" .= acceptorId
+    , "haveAccepted" .= False
     ]
 
   toJSON (ASLeft (Promised timePeriod acceptorId (Bound timePeriod' value'))) = object

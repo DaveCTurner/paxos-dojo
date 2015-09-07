@@ -12,6 +12,7 @@ import Data.Aeson hiding (Value)
 import Data.Aeson.Types (Pair)
 import Data.Hashable
 import Data.List (findIndex)
+import Data.Maybe
 import Data.Monoid
 import Data.Time
 import Data.Time.ISO8601
@@ -80,6 +81,7 @@ instance ToJSON PaxosMessage where
     [ "type"       .= PromisedType
     , "timePeriod" .= timePeriod
     , "by"         .= acceptorId
+    , "haveAccepted" .= False
     ] ++ instanceIfJust maybeInstance
 
   toJSON (BoundPromised maybeInstance timePeriod acceptorId timePeriod' value') = object $
@@ -114,19 +116,24 @@ instance FromJSON PaxosMessage where
       PrepareType  -> Prepare  <$> maybeInstance <*> timePeriod
       ProposedType -> Proposed <$> maybeInstance <*> timePeriod <*> value
       AcceptedType -> Accepted <$> maybeInstance <*> acceptorId <*> timePeriod <*> value
-      PromisedType
-        ->  (BoundPromised
-                <$> maybeInstance
-                <*> timePeriod
-                <*> acceptorId
-                <*> o .: "lastAcceptedTimePeriod"
-                <*> o .: "lastAcceptedValue")
-        <|> (MultiPromised
-                <$> o .: "instance"
-                <*> timePeriod
-                <*> acceptorId) -- TODO need to check the includesGreatestInstances field is true here
-        <|> (FreePromised <$> maybeInstance <*> timePeriod <*> acceptorId)
-        -- TODO worth checking there are no other fields
+      PromisedType -> do
+        includesGreaterInstances <- fromMaybe False <$> o .:? "includesGreaterInstances"
+        haveAccepted             <- fromMaybe True  <$> o .:? "haveAccepted"
+        case (includesGreaterInstances, haveAccepted) of
+             (True,                     _           ) -> MultiPromised
+                                                          <$> o .: "instance"
+                                                          <*> timePeriod
+                                                          <*> acceptorId
+             (_,                        False       ) -> FreePromised
+                                                          <$> maybeInstance
+                                                          <*> timePeriod
+                                                          <*> acceptorId
+             _                                        -> BoundPromised
+                                                          <$> maybeInstance
+                                                          <*> timePeriod
+                                                          <*> acceptorId
+                                                          <*> o .: "lastAcceptedTimePeriod"
+                                                          <*> o .: "lastAcceptedValue"
 
 data Config = Config
   { cGetTimeoutSec  :: Integer

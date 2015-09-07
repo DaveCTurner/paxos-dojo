@@ -153,12 +153,9 @@ More precisely, it receives messages that look like one of these (which are
 sent by Acceptors):
 
 ```javascript
-{"type":"promised","timePeriod":$TIMEPERIOD,"by":$NAME}
+{"type":"promised","timePeriod":$TIMEPERIOD,"by":$NAME,"haveAccepted":false}
 {"type":"promised","timePeriod":$TIMEPERIOD,"by":$NAME,"lastAcceptedTimePeriod":$LATP,"lastAcceptedValue":$LAV}
 ```
-
-In other words, the `lastAcceptedTimePeriod` and `lastAcceptedValue` fields are
-optional, but not independently: either both are present or both are absent.
 
 When it has received two of these `promised` messages for the same
 `$TIMEPERIOD` (a positive integer) with different `$NAME`s (which are strings),
@@ -196,23 +193,23 @@ calculated as described above.
 Here is an example of the expected behaviour:
 
 ```javascript
-{"type":"promised","timePeriod":1,"by":"alice"}
+{"type":"promised","timePeriod":1,"by":"alice","haveAccepted":false}
   // nothing proposed - no previous messages
 
-{"type":"promised","timePeriod":2,"by":"brian"}
+{"type":"promised","timePeriod":2,"by":"brian","haveAccepted":false}
   // nothing proposed - different $TIMEPERIOD from previous message
 
-{"type":"promised","timePeriod":2,"by":"brian"}
+{"type":"promised","timePeriod":2,"by":"brian","haveAccepted":false}
   // nothing proposed - different $TIMEPERIOD from first message and same $NAME as second message
 
-{"type":"promised","timePeriod":2,"by":"chris"}
+{"type":"promised","timePeriod":2,"by":"chris","haveAccepted":false}
   -> {"type":"proposed","timePeriod":2,"value":"my awesome startup name"}
   // proposal made using $MYVALUE as no $LAV given in any promises
 
-{"type":"promised","timePeriod":2,"by":"alice"}
+{"type":"promised","timePeriod":2,"by":"alice","haveAccepted":false}
   // nothing proposed - have already made a proposal for time period 2
 
-{"type":"promised","timePeriod":3,"by":"brian"}
+{"type":"promised","timePeriod":3,"by":"brian","haveAccepted":false}
   // nothing proposed - different $TIMEPERIOD from all earlier messages
 
 {"type":"promised","timePeriod":3,"by":"alice","lastAcceptedTimePeriod":1,"lastAcceptedValue":"AliceCo"}
@@ -222,7 +219,7 @@ Here is an example of the expected behaviour:
 {"type":"promised","timePeriod":4,"by":"alice","lastAcceptedTimePeriod":1,"lastAcceptedValue":"AliceCo"}
   // nothing proposed - different $TIMEPERIOD from all earlier messages
 
-{"type":"promised","timePeriod":4,"by":"brian"}
+{"type":"promised","timePeriod":4,"by":"brian","haveAccepted":false}
   -> {"type":"proposed","timePeriod":4,"value":"AliceCo"}
   // proposal made using $LAV from Alice's promise as it included a lastAcceptedValue field
 
@@ -267,7 +264,7 @@ Under the conditions set out below it may respond to these with:
 
 ```javascript
 // in response to a 'prepare':
-{"type":"promised","timePeriod":$TIMEPERIOD,"by":$NAME}
+{"type":"promised","timePeriod":$TIMEPERIOD,"by":$NAME,"haveAccepted":false}
 {"type":"promised","timePeriod":$TIMEPERIOD,"by":$NAME,"lastAcceptedTimePeriod":$LATP,"lastAcceptedValue":$LAV}
 
 // in response to a 'proposed':
@@ -310,15 +307,15 @@ message has been sent. Here is an example of the expected behaviour:
 
 ```javascript
 {"type":"prepare","timePeriod":2}
-  -> {"type":"promised","timePeriod":2,"by":"me"}
+  -> {"type":"promised","timePeriod":2,"by":"me","haveAccepted":false}
   // NB no "lastAccepted*" as nothing accepted yet
 
 {"type":"prepare","timePeriod":1}
-  -> {"type":"promised","timePeriod":1,"by":"me"}
+  -> {"type":"promised","timePeriod":1,"by":"me","haveAccepted":false}
   // ok to send out an earlier promise too
 
 {"type":"prepare","timePeriod":2}
-  -> {"type":"promised","timePeriod":2,"by":"me"}
+  -> {"type":"promised","timePeriod":2,"by":"me","haveAccepted":false}
   // ok to send out a duplicate promise
 
 {"type":"proposed","timePeriod":1,"value":"value 1"}
