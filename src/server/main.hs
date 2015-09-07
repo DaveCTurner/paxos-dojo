@@ -23,7 +23,6 @@ import System.Random
 import System.Console.ANSI
 import Text.Printf
 import qualified Data.ByteString as B
-import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -68,6 +67,15 @@ instance ToJSON TimePeriod where
 instance FromJSON TimePeriod where
   parseJSON o = (SimpleTimePeriod   <$> parseJSON o)
             <|> (CompoundTimePeriod <$> parseJSON o)
+
+
+instance Hashable TimePeriod where
+  hashWithSalt s (SimpleTimePeriod tp)   = hashWithSalt s tp
+  hashWithSalt s (CompoundTimePeriod tp) = hashWithSalt s tp
+
+instance Show TimePeriod where
+  show (SimpleTimePeriod tp)   = show tp
+  show (CompoundTimePeriod tp) = show tp
 
 instance ToJSON PaxosMessage where
   toJSON (Prepare maybeInstance timePeriod) = object $
@@ -203,6 +211,38 @@ data MessageDirection
   | Outbound
   | Notification
 
+tpColors :: [[SGR]]
+tpColors =
+  [ [SetColor Foreground colIntensity col, SetConsoleIntensity weight]
+  | colIntensity <- [Dull, Vivid]
+  , col <- [Red, Green, Yellow, Blue, Magenta, Cyan, White]
+  , weight <- [NormalIntensity, BoldIntensity]
+  ]
+
+showMaybeInstance :: Maybe InstanceId -> String
+showMaybeInstance Nothing = ""
+showMaybeInstance (Just i) = printf "%6s" ("[" <> show i <> "]")
+
+formatForLog :: PaxosMessage -> String
+formatForLog (Prepare mi tp)                = startLogLine Vivid Red    "PREP" mi       tp
+formatForLog (MultiPromised  i tp a)        = startLogLine Dull Yellow  "PROM" (Just i) tp ++ " by " ++ show a ++ " (multi)"
+formatForLog (FreePromised  mi tp a)        = startLogLine Dull Yellow  "PROM" mi       tp ++ " by " ++ show a ++ " (free)"
+formatForLog (BoundPromised mi tp a tp' v') = startLogLine Dull Yellow  "PROM" mi       tp ++ " by " ++ show a ++ " (last accepted " ++ show v' ++ " at " ++ show tp' ++ ")"
+formatForLog (Proposed      mi      tp  v)  = startLogLine Vivid Yellow "PROP" mi       tp ++ " = " ++ show v
+formatForLog (Accepted      mi    a tp  v)  = startLogLine Vivid Green  "ACCD" mi       tp ++ " by " ++ show a ++ ": " ++ show v
+
+startLogLine :: ColorIntensity -> Color -> String -> Maybe InstanceId -> TimePeriod -> String
+startLogLine intensity typeColor typeName maybeInstance timePeriod = printf "%s%4s%s%s %s%10s%s"
+  (setSGRCode [SetColor Foreground intensity typeColor])
+  (typeName :: String)
+  (setSGRCode [Reset])
+
+  (showMaybeInstance maybeInstance)
+
+  (setSGRCode (tpColors !! (hash timePeriod `mod` length tpColors)))
+  (show timePeriod)
+  (setSGRCode [Reset])
+
 main :: IO ()
 main = do
   outgoingQueueByNameVar   <- newTVarIO M.empty
@@ -294,9 +334,8 @@ main = do
             case response of
               Nothing -> respondEmpty
               Just value -> do
-                let valueBytes = encode (value :: PaxosMessage)
                 responseTime <- getCurrentTime
-                logMessage responseTime Outbound queueName $ T.unpack $ T.decodeUtf8 $ BL.toStrict valueBytes
+                logMessage responseTime Outbound queueName $ formatForLog value
                 respondJson value
 
       Right POST
@@ -315,8 +354,8 @@ main = do
             case maybeValue of
               Nothing -> respondBadRequest
               Just value -> do
-                logMessage now Inbound queueName $ T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode value
-                atomically $ writeTQueue incomingQueue (queueName, now, value :: PaxosMessage)
+                logMessage now Inbound queueName $ formatForLog value
+                atomically $ writeTQueue incomingQueue (queueName, now, value)
                 respondEmpty
 
       _ -> respondBadMethod)
@@ -331,7 +370,7 @@ main = do
         now <- getCurrentTime
         let timePeriod = floor $ diffUTCTime now unixEpoch
             value = Prepare Nothing $ SimpleTimePeriod timePeriod
-        logMessage now Inbound "/nag" $ T.unpack $ T.decodeUtf8 $ BL.toStrict $ encode value
+        logMessage now Inbound "/nag" $ formatForLog value
         atomically $ do
           let minTimePeriod = timePeriod - 300
           modifyTVar minTimePeriodVar $ max minTimePeriod
