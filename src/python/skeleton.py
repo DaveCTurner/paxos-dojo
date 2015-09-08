@@ -1,10 +1,9 @@
 #!/usr/bin/python
 
 from messenger import Messenger
+from os        import getpid
 
-messenger = Messenger('http://127.0.0.1:24192/learner/5');
-
-proposal = 0;
+messenger = Messenger('http://127.0.0.1:24192/q/qq-py-' + str(getpid()).zfill(5))
 
 while True:
   currMessage = messenger.getNextMessage()
