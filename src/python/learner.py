@@ -1,8 +1,9 @@
 #!/usr/bin/python
 
 from messenger import Messenger
+from os        import getpid
 
-messenger = Messenger('http://127.0.0.1:24192/learner/5')
+messenger = Messenger('http://127.0.0.1:24192/l/dt-py-' + str(getpid()).zfill(5))
 received = []
 
 while True:
