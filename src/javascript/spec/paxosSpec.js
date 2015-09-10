@@ -108,15 +108,15 @@ describe("Acceptor", function() {
   var receivedMessages = [];
 
   [ {   onReceiptOf: {"type":"prepare","timePeriod":2},
-        expectToSend: [{"type":"promised","timePeriod":2,"by":"me"}],
+        expectToSend: [{"type":"promised","timePeriod":2,"by":"me","haveAccepted":false}],
         because: "can promise anything as nothing has been accepted yet"
 
   }, {  onReceiptOf: {"type":"prepare","timePeriod":1},
-        expectToSend: [{"type":"promised","timePeriod":1,"by":"me"}],
+        expectToSend: [{"type":"promised","timePeriod":1,"by":"me","haveAccepted":false}],
         because: "it is ok to send out a promise for an earlier time period too"
 
   }, {  onReceiptOf: {"type":"prepare","timePeriod":2},
-        expectToSend: [{"type":"promised","timePeriod":2,"by":"me"}],
+        expectToSend: [{"type":"promised","timePeriod":2,"by":"me","haveAccepted":false}],
         because: "it is ok to send out a duplicate promise"
 
   }, {  onReceiptOf: {"type":"proposed","timePeriod":1,"value":"value 1"},
