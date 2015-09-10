@@ -281,14 +281,14 @@ main = execParser optParser >>= \StaticConfig{..} -> do
 
   let logMessage :: UTCTime -> MessageDirection -> B.ByteString -> String -> IO ()
       logMessage time messageDirection queueName message = void $ forkIO $ withMVar logLock $ \_ -> do
-        putStrLn $ printf "%s%-13s%s %s%c%-20s%s %s"
+        putStrLn $ printf "%s%-13s%s %s%-20s %c%s %s"
           (setSGRCode [ SetColor Foreground Vivid Magenta ])
           (take 13 $ drop 11 $ formatISO8601Micros time)
           (setSGRCode [Reset])
 
           (setSGRCode [ SetColor Foreground Vivid $ case messageDirection of Inbound -> Red; Outbound -> Green; Notification -> Yellow ])
-          (case messageDirection of Inbound -> '<'; Outbound -> '>'; Notification -> '!')
           (T.unpack $ T.decodeUtf8 queueName)
+          (case messageDirection of Inbound -> '>'; Outbound -> '<'; Notification -> '!')
           (setSGRCode [Reset])
 
           message
