@@ -3,7 +3,7 @@
 require_relative 'messenger'
 
 name = ARGV[0] or raise 'no acceptor name given'
-messenger = Messenger.new('http://127.0.0.1:24192/a/dt-rb')
+messenger = Messenger.new(('http://127.0.0.1:24192/a/dt-rb-%05d-' % Process.pid()) + name)
 
 latestProposedTimePeriod = 0
 promisedToAcceptNoEarlierThan = 0

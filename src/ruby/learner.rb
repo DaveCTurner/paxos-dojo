@@ -2,7 +2,7 @@
 
 require_relative 'messenger'
 
-messenger = Messenger.new('http://127.0.0.1:24192/l/dt-rb')
+messenger = Messenger.new('http://127.0.0.1:24192/l/dt-rb-%05d' % Process.pid())
 received = []
 
 while true do
