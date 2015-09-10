@@ -97,16 +97,16 @@ describe("Proposer", function() {
         proposer(testCase.onReceiptOf, function(response) { actuallySent.push(response); });
         expect(actuallySent).toEqual(testCase.expectToSend);
       });
-    
+
     receivedMessages.push(testCase.onReceiptOf);
-    
+
   });
 });
 
 describe("Acceptor", function() {
 
   var receivedMessages = [];
-  
+
   [ {   onReceiptOf: {"type":"prepare","timePeriod":2},
         expectToSend: [{"type":"promised","timePeriod":2,"by":"me"}],
         because: "can promise anything as nothing has been accepted yet"

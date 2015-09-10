@@ -1,7 +1,7 @@
 
 function makeLearner(onLearned) {
   var learnerReceived = [];
-  
+
   return function(currMessage) {
     var haveLearned = false;
     learnerReceived.forEach(function(prevMessage) {
@@ -17,7 +17,7 @@ function makeLearner(onLearned) {
 function makeProposer(myValue) {
   var proposerReceived = [];
   var latestProposedTimePeriod = 0;
-  
+
   return function(currMessage, respond) {
     if (currMessage.timePeriod <= latestProposedTimePeriod) { return; }
     var haveProposed = false;
@@ -26,13 +26,13 @@ function makeProposer(myValue) {
       if (currMessage.timePeriod != prevMessage.timePeriod) { return; }
       if (currMessage.by == prevMessage.by) { return; }
       var proposedValue = myValue;
-      
+
       if (currMessage.lastAcceptedTimePeriod) {
         proposedValue = currMessage.lastAcceptedValue;
       }
-      
+
       if (prevMessage.lastAcceptedTimePeriod
-            && (!currMessage.lastAcceptedTimePeriod 
+            && (!currMessage.lastAcceptedTimePeriod
                 || prevMessage.lastAcceptedTimePeriod > currMessage.lastAcceptedTimePeriod)) {
         proposedValue = prevMessage.lastAcceptedValue;
       }
@@ -44,19 +44,19 @@ function makeProposer(myValue) {
   };
 }
 
-function makeAcceptor(name) { 
+function makeAcceptor(name) {
   var promisedToAcceptNoEarlierThan = 0;
   var lastAccepted = -1;
   var lastAcceptedValue = '';
-  
+
   return function(currMessage, respond) {
     var response = { by: name, timePeriod: currMessage.timePeriod };
     if (currMessage.type === 'prepare') {
       if (currMessage.timePeriod <= lastAccepted) { return; }
       if (currMessage.timePeriod > promisedToAcceptNoEarlierThan) { promisedToAcceptNoEarlierThan = currMessage.timePeriod; }
-      
+
       response.type = 'promised';
-      
+
       if (lastAccepted >= 0) {
         response.lastAcceptedTimePeriod = lastAccepted;
         response.lastAcceptedValue      = lastAcceptedValue;
