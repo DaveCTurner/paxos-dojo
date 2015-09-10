@@ -19,6 +19,7 @@ import Data.Time.ISO8601
 import Network.HTTP.Types hiding (Status)
 import Network.Wai
 import Network.Wai.Handler.Warp
+import Options.Applicative
 import System.Random
 import System.Console.ANSI
 import Text.Printf
@@ -27,6 +28,16 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+
+data StaticConfig = StaticConfig
+  { cPort :: Int
+  } deriving (Show, Eq)
+
+optParser :: ParserInfo StaticConfig
+optParser = info (helper <*> (StaticConfig
+  <$> option auto       (long "port" <> metavar "PORT" <> help "Listen for connections on port PORT")))
+
+  (fullDesc <> progDesc "Paxos Dojo server")
 
 type InstanceId = Integer
 type AcceptorId = T.Text
@@ -251,7 +262,7 @@ startLogLine intensity typeColor typeName maybeInstance timePeriod = printf "%s%
   (setSGRCode [Reset])
 
 main :: IO ()
-main = do
+main = execParser optParser >>= \StaticConfig{..} -> do
   outgoingQueueByNameVar   <- newTVarIO M.empty
   incomingQueue            <- newTQueueIO
   logLock                  <- newMVar ()
@@ -282,7 +293,7 @@ main = do
 
           message
 
-  withAsync (run 24192 $ \req respond -> do
+  withAsync (run cPort $ \req respond -> do
     now <- getCurrentTime
     let queueName = rawPathInfo req
 

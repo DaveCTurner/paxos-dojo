@@ -23,4 +23,5 @@ executable server
     , containers, random, warp, wai, http-types, time, iso8601-time
     , aeson, hashable, stm, async
     , unbounded-delays
+    , optparse-applicative
   default-language:    Haskell2010
