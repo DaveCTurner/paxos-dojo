@@ -2,7 +2,7 @@
 
 require_relative 'messenger'
 
-name = 'alice'
+name = ARGV[0] or raise 'no acceptor name given'
 messenger = Messenger.new('http://127.0.0.1:24192/a/dt-rb')
 
 latestProposedTimePeriod = 0

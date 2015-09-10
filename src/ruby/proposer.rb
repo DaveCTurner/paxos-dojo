@@ -2,7 +2,7 @@
 
 require_relative 'messenger'
 
-freeValue = 'value from ruby 2'
+freeValue = ARGV[0] or raise "no value to propose given"
 messenger = Messenger.new('http://127.0.0.1:24192/p/dt-rb')
 
 received = []
