@@ -47,7 +47,9 @@ learner = makeLearner(function(learnedValue) {
   learnedValueDiv.className = 'something-learned';
 });
 
-runModule('http://localhost:8080/paxos/l/dt-js-' + myId, learner);
+var baseUri = 'http://localhost:8080/paxos';
+
+runModule(baseUri + '/l/dt-js-' + myId, learner);
 
 var proposerNumber = 0;
 
@@ -60,11 +62,11 @@ location.search.substr(1).split('&').forEach(function(item) {
     console.log('Running proposer for \'' + value + '\'');
     proposer = makeProposer(value);
     proposerNumber += 1;
-    runModule('http://localhost:8080/paxos/p/dt-js-' + myId + '-' + proposerNumber, proposer);
+    runModule(baseUri + '/p/dt-js-' + myId + '-' + proposerNumber, proposer);
   } else if (key == 'acceptor') {
     console.log('Running acceptor \'' + value + '\'');
     acceptor = makeAcceptor(value);
-    runModule('http://localhost:8080/paxos/a/dt-js-' + myId + '-' + value, acceptor);
+    runModule(baseUri + '/a/dt-js-' + myId + '-' + value, acceptor);
   }
 });
 
