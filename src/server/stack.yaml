@@ -1,5 +1,8 @@
-flags: {}
+flags:
+  iso8601-time:
+    new-time: false
 packages:
 - '.'
-extra-deps: []
-resolver: lts-3.4
+extra-deps:
+- iso8601-time-0.1.4
+resolver: lts-2.22
