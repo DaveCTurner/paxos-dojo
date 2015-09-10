@@ -12,41 +12,17 @@ body { font-family: sans-serif; font-size: x-small; }
 td { vertical-align: top; }
 #learner-messages { background-color: #d0ffd0; }
 #proposer-messages { background-color: #ffd0d0; }
-.table-container { max-width: 40%; min-width: 40%; display: inline-block; }
+.table-container { max-width: 80%; min-width: 40%; display: inline-block; }
 </style>
-<script type='text/javascript'>
-
-function runModule(url, cb) {
-  var respond = function(message) {
-    var req = new XMLHttpRequest();
-    req.open('POST', url);
-    req.setRequestHeader('Content-type', 'application/json');
-    req.send(JSON.stringify(message));
-  }
-
-  var req = new XMLHttpRequest();
-  req.onreadystatechange = function() {
-    if (req.readyState != 4) {
-      return;
-    }
-
-    var isHttpSuccess = 200 <= req.status && req.status <= 299;
-    setTimeout(function() { runModule(url, cb) }, isHttpSuccess ? 0 : 2000);
-
-    if (req.status == 200) {
-      cb(JSON.parse(req.responseText), respond);
-    }
-  }
-  req.open('GET', url);
-  req.send();
-}
-</script>
-
+  <script src="src/messenger.js"></script>
+  <script src="src/paxos.js"></script>
 </head>
 <body>
 <div style='float: right'><div id='learned-value' class='nothing-learned'>Nothing learned yet</div></div>
 <h1 id='heading'>Javascript seems to be disabled</h1>
-<div class='table-container'><h2>Proposer activity (newest first)</h2><table id='proposer-messages'></table></div>
+<p>Use the query string to run acceptors and proposers, e.g.</p>
+<pre>?propose=value1&propose=value2&acceptor=alice&acceptor=brian</pre>
+<p>(a learner always runs)</p>
 <div class='table-container'><h2>Learner activity (newest first)</h2><table id='learner-messages'></table></div>
 </tr></table>
 
@@ -60,104 +36,37 @@ function logMessage(tableId, cellClass, cellText) {
   cell.innerHTML = cellText;
 }
 
-myId = Math.floor(Math.random() * 1000000);
+myId = 10000 + Math.floor(Math.random() * 90000);
 document.getElementById('heading').innerHTML = 'Paxos in Javascript (#' + myId + ')';
 
-learnerReceived = [];
+learner = makeLearner(function(learnedValue) {
+  logMessage('learner-messages', 'learner-learned', 'Learned value \'' + learnedValue + '\'');
 
-runModule('http://localhost:8080/paxos/learner/js-dt/' + myId, function(currMessage, respond) {
-  logMessage('learner-messages', 'learner-received', 'Received ' + JSON.stringify(currMessage));
-
-  var haveLearned = false;
-  learnerReceived.forEach(function(prevMessage) {
-    if (!haveLearned && currMessage.timePeriod === prevMessage.timePeriod && currMessage.by != prevMessage.by) {
-      logMessage('learner-messages', 'learner-learned', 'Learned value \'' + currMessage.value + '\'');
-      haveLearned = true;
-      
-      var learnedValueDiv = document.getElementById('learned-value');
-      learnedValueDiv.innerHTML = 'Learned value \'' + currMessage.value + '\'';
-      learnedValueDiv.className = 'something-learned';
-    }
-  });
-
-  learnerReceived.push(currMessage);
+  var learnedValueDiv = document.getElementById('learned-value');
+  learnedValueDiv.innerHTML = 'Learned value \'' + learnedValue + '\'';
+  learnedValueDiv.className = 'something-learned';
 });
 
-proposerReceived = [];
-latestProposedTimePeriod = 0;
+runModule('http://localhost:8080/paxos/l/dt-js-' + myId, learner);
 
-runModule('http://localhost:8080/paxos/proposer/js-dt/' + myId, function(currMessage, respond) {
-  logMessage('proposer-messages', 'proposer-received', 'Received ' + JSON.stringify(currMessage));
+var proposerNumber = 0;
 
-  if (currMessage.timePeriod <= latestProposedTimePeriod) { return; }
+location.search.substr(1).split('&').forEach(function(item) {
+  var keyValue = item.split('=');
+  var key = keyValue[0];
+  var value = keyValue[1];
 
-  var haveProposed = false;
-  proposerReceived.forEach(function(prevMessage) {
-    if (haveProposed) { return; }
-    if (currMessage.timePeriod != prevMessage.timePeriod) { return; }
-    if (currMessage.by == prevMessage.by) { return; }
-
-    var proposedValue = "Value from Javascript proposer";
-
-    if (currMessage.lastAcceptedTimePeriod) {
-      if (prevMessage.lastAcceptedTimePeriod) {
-        if (currMessage.lastAcceptedTimePeriod > prevMessage.lastAcceptedTimePeriod) {
-          proposedValue = currMessage.lastAcceptedValue;
-        } else {
-          proposedValue = prevMessage.lastAcceptedValue;
-        }
-      } else {
-        proposedValue = currMessage.lastAcceptedValue;
-      }
-    } else if (prevMessage.lastAcceptedTimePeriod) {
-        proposedValue = prevMessage.lastAcceptedValue;
-    }
-
-    logMessage('proposer-messages', 'proposer-proposed', 'Proposed value \'' + proposedValue + '\'');
-    respond({'type':'proposed','timePeriod':currMessage.timePeriod,'value':proposedValue});
-    latestProposedTimePeriod = currMessage.timePeriod;
-    haveProposed = true;
-  });
-
-  proposerReceived.push(currMessage);
-
-});
-
-/*
-maxAccepted = -1;
-maxAcceptedValue = '';
-maxPromised = -1;
-
-runModule('http://localhost:8080/paxos/acceptor/brian', function(currMessage, respond) {
-  console.log('acceptor currMessage: ' + JSON.stringify(currMessage));
-
-  if (currMessage.type === 'prepare') {
-    if (currMessage.timePeriod <= maxAccepted) { return; }
-    if (currMessage.timePeriod > maxPromised) { maxPromised = currMessage.timePeriod; }
-    
-    currMessage.type = 'promised';
-    currMessage.by   = 'brian';
-    
-    if (maxAccepted >= 0) {
-      currMessage.lastAcceptedTimePeriod = maxAccepted;
-      currMessage.lastAcceptedValue      = maxAcceptedValue;
-    }
-    respond(currMessage);
-  
-  } else if (currMessage.type === 'proposed') {
-    if (currMessage.timePeriod < maxPromised) { return; }
-    if (currMessage.timePeriod < maxAccepted) { return; }
-
-    maxAccepted = currMessage.timePeriod;
-    maxAcceptedValue = currMessage.value;
-
-    currMessage.type = 'accepted';
-    currMessage.by   = 'brian';
-    respond(currMessage);
+  if (key == 'propose') {
+    console.log('Running proposer for \'' + value + '\'');
+    proposer = makeProposer(value);
+    proposerNumber += 1;
+    runModule('http://localhost:8080/paxos/p/dt-js-' + myId + '-' + proposerNumber, proposer);
+  } else if (key == 'acceptor') {
+    console.log('Running acceptor \'' + value + '\'');
+    acceptor = makeAcceptor(value);
+    runModule('http://localhost:8080/paxos/a/dt-js-' + myId + '-' + value, acceptor);
   }
-  
 });
-*/
 
 </script>
 </body>
