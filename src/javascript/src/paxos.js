@@ -51,8 +51,8 @@ function makeAcceptor(name) {
 
   return function(currMessage, respond) {
     var response = { by: name, timePeriod: currMessage.timePeriod };
+    if (currMessage.timePeriod <= lastAccepted) { return; }
     if (currMessage.type === 'prepare') {
-      if (currMessage.timePeriod <= lastAccepted) { return; }
       if (currMessage.timePeriod > promisedToAcceptNoEarlierThan) { promisedToAcceptNoEarlierThan = currMessage.timePeriod; }
 
       response.type = 'promised';
@@ -63,17 +63,16 @@ function makeAcceptor(name) {
       } else {
         response.haveAccepted = false;
       }
-      respond(response);
-    
+
     } else if (currMessage.type === 'proposed') {
       if (currMessage.timePeriod < promisedToAcceptNoEarlierThan) { return; }
-      if (currMessage.timePeriod <= lastAccepted) { return; }
 
       lastAccepted = currMessage.timePeriod;
       lastAcceptedValue = currMessage.value;
       response.type = 'accepted';
       response.value = currMessage.value;
-      respond(response);
     }
+
+    respond(response);
   };
 };
