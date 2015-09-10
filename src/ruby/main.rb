@@ -146,10 +146,10 @@ class Acceptor
 end
     
 
-messenger = Messenger.new('http://127.0.0.1:24192/general/dt-rb')
+messenger = Messenger.new('http://52.19.14.12:24192/general/dt-rb')
 learner   = Learner.new
-proposer  = Proposer.new(Messenger.new('http://127.0.0.1:24192/proposer/dt-rb'), 'value from ruby')
-acceptor  = Acceptor.new(Messenger.new('http://127.0.0.1:24192/acceptor/dt-rb'), 'alice')
+proposer  = Proposer.new(Messenger.new('http://52.19.14.12:24192/proposer/dt-rb'), 'value from ruby')
+acceptor  = Acceptor.new(Messenger.new('http://52.19.14.12:24192/acceptor/dt-rb'), 'alice')
 
 while true do
 
