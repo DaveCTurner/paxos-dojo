@@ -148,10 +148,11 @@ getJSON uri = do
     maybe (threadDelay 3000000 >> runLoop req manager) return maybeResult
 
 postJSON :: ToJSON a => String -> a -> IO ()
-postJSON uri value = void $ ignoringExceptions $ do
+postJSON uri value = void $ forkIO $ do
+  threadDelay 50000
   manager <- newManager defaultManagerSettings
   req <- parseUrl uri
-  withResponse req { method = methodPost, requestBody = RequestBodyLBS $ encode value } manager $ \_ -> return (Just ())
+  withResponse req { method = methodPost, requestBody = RequestBodyLBS $ encode value } manager $ \_ -> return ()
 
 ignoringExceptions :: IO (Maybe a) -> IO (Maybe a)
 ignoringExceptions
