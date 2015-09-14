@@ -71,11 +71,13 @@ data AcceptedMessage = Accepted TimePeriod AcceptorId Value
 
 data LearnerState = LearnerState [AcceptedMessage]
 
-learner :: (MonadState LearnerState m, MonadWriter [String] m) => AcceptedMessage -> m ()
+type LearnedValue = (TimePeriod, String)
+
+learner :: (MonadState LearnerState m, MonadWriter [LearnedValue] m) => AcceptedMessage -> m ()
 learner newMessage@(Accepted timePeriod acceptorId value) = do
   LearnerState previousMessages <- get
   put $ LearnerState $ newMessage : previousMessages
-  when (any isMatch previousMessages) $ tell [value]
+  when (any isMatch previousMessages) $ tell [(timePeriod, value)]
 
   where isMatch (Accepted timePeriod' acceptorId' _)
           | timePeriod /= timePeriod' = False
@@ -169,8 +171,8 @@ runLearner uriSource s0 logLock = go s0
   go s = do
     acceptedMessage <- getJSON uri
     let ((),s',outputs) = runRWS (learner acceptedMessage) () s
-    forM_ outputs $ \learnedValue -> withMVar logLock $ \_
-      -> putStrLn $ printf "Learned value '%s'" learnedValue
+    forM_ outputs $ \(timePeriod, learnedValue) -> withMVar logLock $ \_
+      -> putStrLn $ printf "%10d: learned value '%s'" timePeriod learnedValue
     go s'
 
 instance FromJSON AcceptedMessage where
@@ -252,10 +254,10 @@ instance ToJSON AcceptorSent where
 test :: IO ()
 test = hspec $ do
   describe "Learner" $ learnerTest
-    [(Accepted 1 "alice" "foo", [],      "should learn nothing with the first message")
-    ,(Accepted 2 "brian" "bar", [],      "should learn nothing with a message for a different proposal")
-    ,(Accepted 2 "brian" "bar", [],      "should learn nothing from a duplicate of the previous message")
-    ,(Accepted 2 "chris" "bar", ["bar"], "should learn a value from another message for proposal 2")
+    [(Accepted 1 "alice" "foo", [],          "should learn nothing with the first message")
+    ,(Accepted 2 "brian" "bar", [],          "should learn nothing with a message for a different proposal")
+    ,(Accepted 2 "brian" "bar", [],          "should learn nothing from a duplicate of the previous message")
+    ,(Accepted 2 "chris" "bar", [(2,"bar")], "should learn a value from another message for proposal 2")
     ]
 
   describe "Proposer" $ proposerTest
@@ -300,7 +302,7 @@ test = hspec $ do
     ,(Right $ Proposed 3 "yet another value", [], "should not accept an earlier proposal either")
     ]
 
-learnerTest :: [(AcceptedMessage, [String], String)] -> SpecWith ()
+learnerTest :: [(AcceptedMessage, [(TimePeriod, String)], String)] -> SpecWith ()
 learnerTest = generalTest learner () (LearnerState [])
 
 proposerTest :: [(PromisedMessage, [ProposedMessage], String)] -> SpecWith ()
