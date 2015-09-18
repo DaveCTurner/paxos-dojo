@@ -559,14 +559,15 @@ another majority of acceptors which therefore overlaps _S_.
 <img src='proof/09-promises-overlap.png' width='600px' />
 
 Because the two majorities must overlap there must be an acceptor, say `alice`,
-who accepted _P_ and promised to accept _R_. It must have happened in that
-order as having promised to accept _R_ `alice` would then not have been able to
-accept _P_.
+who accepted _P_ and then promised to accept _R_. It must have happened in that
+order as, having promised to accept _R_, `alice` would then not have been able
+to accept _P_. So the promise `alice` made would have included a
+`lastAcceptedValue` of **X**.
 
 <img src='proof/10-last-accepted-1.png' width='600px' />
 
-Although by the time she promised to accept _R_ she may have accepted a later
-proposal too (whose value will still have been **X**):
+This is true even if `alice` accepted a later proposal than _P_ before
+promising to accept _R_: all such proposals have value **X**.
 
 <img src='proof/11-last-accepted-2.png' width='600px' />
 
