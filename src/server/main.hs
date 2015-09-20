@@ -171,6 +171,8 @@ data Config = Config
   , cMaxDelaySec    :: Int
   , cNagPeriodSec   :: Int
   , cPartitionedAcceptors :: [T.Text]
+  , cShowIncoming   :: Bool
+  , cShowOutgoing   :: Bool
   }
 
 instance ToJSON Config where
@@ -182,6 +184,8 @@ instance ToJSON Config where
     , "max-delay-sec"    .= cMaxDelaySec
     , "nag-period-sec"   .= cNagPeriodSec
     , "partitioned-acceptors" .= cPartitionedAcceptors
+    , "show-incoming"    .= cShowIncoming
+    , "show-outgoing"    .= cShowOutgoing
     ]
 
 instance FromJSON Config where
@@ -193,6 +197,8 @@ instance FromJSON Config where
     <*> o .: "max-delay-sec"
     <*> o .: "nag-period-sec"
     <*> o .: "partitioned-acceptors"
+    <*> o .: "show-incoming"
+    <*> o .: "show-outgoing"
 
 data Status = Status Config Integer (M.Map Integer B.ByteString) [B.ByteString] [(B.ByteString, UTCTime, Bool)]
 
@@ -277,6 +283,8 @@ main = execParser optParser >>= \StaticConfig{..} -> do
     , cMaxDelaySec    = 0
     , cNagPeriodSec   = 5
     , cPartitionedAcceptors = []
+    , cShowIncoming   = True
+    , cShowOutgoing   = False
     }
 
   let logMessage :: UTCTime -> MessageDirection -> B.ByteString -> String -> IO ()
@@ -353,7 +361,7 @@ main = execParser optParser >>= \StaticConfig{..} -> do
               Nothing -> respondEmpty
               Just value -> do
                 responseTime <- getCurrentTime
-                logMessage responseTime Outbound queueName $ formatForLog value
+                when cShowOutgoing $ logMessage responseTime Outbound queueName $ formatForLog value
                 respondJson value
 
       Right POST
@@ -372,7 +380,8 @@ main = execParser optParser >>= \StaticConfig{..} -> do
             case maybeValue of
               Nothing -> respondBadRequest
               Just value -> do
-                logMessage now Inbound queueName $ formatForLog value
+                Config{..} <- atomically $ readTVar configVar
+                when cShowIncoming $ logMessage now Inbound queueName $ formatForLog value
                 atomically $ writeTQueue incomingQueue (queueName, now, value)
                 respondEmpty
 
@@ -382,13 +391,13 @@ main = execParser optParser >>= \StaticConfig{..} -> do
 
     $ \_ -> withAsync (forever $ do
 
-        nagPeriodSec <- atomically $ checking (>0) $ cNagPeriodSec <$> readTVar configVar
-        threadDelay $ nagPeriodSec * 1000000
+        Config{..} <- atomically $ checking ((>0) . cNagPeriodSec) $ readTVar configVar
+        threadDelay $ cNagPeriodSec * 1000000
 
         now <- getCurrentTime
         let timePeriod = floor $ diffUTCTime now unixEpoch
             value = Prepare Nothing $ SimpleTimePeriod timePeriod
-        logMessage now Inbound "/nag" $ formatForLog value
+        when cShowIncoming $ logMessage now Inbound "/nag" $ formatForLog value
         atomically $ do
           let minTimePeriod = timePeriod - 300
           modifyTVar minTimePeriodVar $ max minTimePeriod
