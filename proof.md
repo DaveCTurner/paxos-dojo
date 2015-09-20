@@ -1,4 +1,3 @@
-
 ### Correctness Proof
 
 The protocol guarantees that all values learned by all learners must be equal.
