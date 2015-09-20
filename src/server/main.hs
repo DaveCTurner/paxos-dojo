@@ -30,12 +30,14 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 
 data StaticConfig = StaticConfig
-  { cPort :: Int
+  { cPort     :: Int
+  , cTestMode :: Bool
   } deriving (Show, Eq)
 
 optParser :: ParserInfo StaticConfig
 optParser = info (helper <*> (StaticConfig
-  <$> option auto       (long "port" <> metavar "PORT" <> help "Listen for connections on port PORT")))
+  <$> option auto       (long "port" <> metavar "PORT" <> help "Listen for connections on port PORT")
+  <*> switch (long "test-mode" <> help "Run in test mode: generate interesting messages and isolate clients")))
 
   (fullDesc <> progDesc "Paxos Dojo server")
 
@@ -372,11 +374,17 @@ main = execParser optParser >>= \StaticConfig{..} -> do
               Just value -> do
                 Config{..} <- atomically $ readTVar configVar
                 when cShowIncoming $ logMessage now Inbound queueName $ formatForLog value
-                atomically $ writeTQueue incomingQueue (queueName, now, value)
+                unless cTestMode   $ atomically $ writeTQueue incomingQueue (queueName, now, value)
                 respondEmpty
 
       _ -> respondBadMethod)
 
+{-
+
+In test-mode, don't put external POSTs into the incoming queue. But do put nags
+as you need something to tickle the main loop to expire stale queues.
+
+-}
 
 
     $ \_ -> withAsync (forever $ do
@@ -442,31 +450,85 @@ main = execParser optParser >>= \StaticConfig{..} -> do
             findRelevantProposer (CompoundTimePeriod tps) = return (`elem` [T.encodeUtf8 (prefix <> T.pack (show p)) | prefix <- proposerPrefixes])
               where p = last tps
 
-        shouldOutputTo <- case value of
-          Prepare  {}                      -> return isAcceptor
-          Proposed {}                      -> return $ let partitionedAcceptorCount = length cPartitionedAcceptors in
-            if partitionedAcceptorCount == 0
-              then isAcceptor
-              else \a -> isAcceptor a && a == T.encodeUtf8 (cPartitionedAcceptors !! (mod (hash incomingQueueName) partitionedAcceptorCount))
+        if cTestMode
+          then do
+            case value of
+              Prepare _ (SimpleTimePeriod timePeriod) -> do
 
-          Accepted {}                      -> return isLearner
-          MultiPromised _ timePeriod _     -> findRelevantProposer timePeriod
-          FreePromised  _ timePeriod _     -> findRelevantProposer timePeriod
-          BoundPromised _ timePeriod _ _ _ -> findRelevantProposer timePeriod
+                let tp n = SimpleTimePeriod $ timePeriod + n
 
-        let outputQueues = [ queue
-                           | (queueName, (_, queue)) <- M.toList activeQueuesMap
-                           , queueName /= incomingQueueName
-                           , shouldOutputTo queueName ]
+                let testMessages queueName
+                      | isProposer queueName =
+                        [  FreePromised Nothing (tp 0) "alice"
+                        ,  FreePromised Nothing (tp 1) "brian"
+                        ,  FreePromised Nothing (tp 1) "brian"
+                        ,  FreePromised Nothing (tp 1) "chris"
+                        ,  FreePromised Nothing (tp 1) "alice"
+                        ,  FreePromised Nothing (tp 2) "brian"
+                        , BoundPromised Nothing (tp 2) "alice" (tp 1) "Alice's value"
+                        , BoundPromised Nothing (tp 3) "alice" (tp 1) "Alice's value"
+                        ,  FreePromised Nothing (tp 3) "brian"
+                        , BoundPromised Nothing (tp 4) "alice" (tp 1) "Alice's value"
+                        , BoundPromised Nothing (tp 4) "brian" (tp 2) "Brian's value"
+                        , BoundPromised Nothing (tp 5) "brian" (tp 2) "Brian's value"
+                        , BoundPromised Nothing (tp 5) "alice" (tp 1) "Alice's value"
+                        ]
+                      | isAcceptor queueName =
+                        [ Prepare  Nothing (tp 1)
+                        , Prepare  Nothing (tp 0)
+                        , Prepare  Nothing (tp 1)
+                        , Proposed Nothing (tp 0) "do not accept me"
+                        , Proposed Nothing (tp 1) "accept me"
+                        , Prepare  Nothing (tp 0)
+                        , Prepare  Nothing (tp 1)
+                        , Prepare  Nothing (tp 2)
+                        , Proposed Nothing (tp 3) "accept me"
+                        , Proposed Nothing (tp 3) "do not accept me"
+                        , Proposed Nothing (tp 2) "do not accept me"
+                        ]
+                      | isLearner  queueName =
+                        [ Accepted Nothing "alice" (tp 0) "not to learn"
+                        , Accepted Nothing "brian" (tp 1) "eventually learned"
+                        , Accepted Nothing "brian" (tp 1) "eventually learned"
+                        , Accepted Nothing "chris" (tp 1) "eventually learned"
+                        ]
+                      | otherwise            = []
 
-        return $ do
-          forM_ (M.keys staleQueuesMap) $ \staleQueueName ->
-            logMessage receivedTime Notification staleQueueName ("expired at " <> formatISO8601Millis staleIfNotQueriedSince)
-          forM_ outputQueues $ \queue -> do
-            dropRV  <- randomRIO (0.0, 100.0)
-            let toMilliseconds = fromIntegral . (1000000 *)
-            delayRV <- randomRIO (toMilliseconds cMinDelaySec, toMilliseconds cMaxDelaySec)
-            when (dropRV >= cDropPercentage) $ void $ forkIO $ do
-              threadDelay delayRV
-              atomically $ writeTQueue queue value
+                emptyQueues <- filterM (isEmptyTQueue . snd) [ (queueName, queue) | (queueName, (_, queue)) <- M.toList activeQueuesMap ]
+                forM_ emptyQueues $ \(queueName, queue) -> forM_ (testMessages queueName) $ writeTQueue queue
+
+              _ -> return ()
+
+            return $ forM_ (M.keys staleQueuesMap) $ \staleQueueName ->
+              logMessage receivedTime Notification staleQueueName ("expired at " <> formatISO8601Millis staleIfNotQueriedSince)
+
+          else do
+
+            shouldOutputTo <- case value of
+              Prepare  {}                      -> return isAcceptor
+              Proposed {}                      -> return $ let partitionedAcceptorCount = length cPartitionedAcceptors in
+                if partitionedAcceptorCount == 0
+                  then isAcceptor
+                  else \a -> isAcceptor a && a == T.encodeUtf8 (cPartitionedAcceptors !! (mod (hash incomingQueueName) partitionedAcceptorCount))
+
+              Accepted {}                      -> return isLearner
+              MultiPromised _ timePeriod _     -> findRelevantProposer timePeriod
+              FreePromised  _ timePeriod _     -> findRelevantProposer timePeriod
+              BoundPromised _ timePeriod _ _ _ -> findRelevantProposer timePeriod
+
+            let outputQueues = [ queue
+                               | (queueName, (_, queue)) <- M.toList activeQueuesMap
+                               , queueName /= incomingQueueName
+                               , shouldOutputTo queueName ]
+
+            return $ do
+              forM_ (M.keys staleQueuesMap) $ \staleQueueName ->
+                logMessage receivedTime Notification staleQueueName ("expired at " <> formatISO8601Millis staleIfNotQueriedSince)
+              forM_ outputQueues $ \queue -> do
+                dropRV  <- randomRIO (0.0, 100.0)
+                let toMilliseconds = fromIntegral . (1000000 *)
+                delayRV <- randomRIO (toMilliseconds cMinDelaySec, toMilliseconds cMaxDelaySec)
+                when (dropRV >= cDropPercentage) $ void $ forkIO $ do
+                  threadDelay delayRV
+                  atomically $ writeTQueue queue value
 
