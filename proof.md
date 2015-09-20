@@ -34,24 +34,21 @@ value **X**:
 
 The value of _P_ must have been learned because it was accepted by a majority
 _S_ of acceptors, and the value for _R_ was proposed because of promises from
-another majority of acceptors which therefore overlaps _S_.
-
-<img src='proof/09-promises-overlap.png' width='600px' />
-
-Because the two majorities must overlap there must be an acceptor, say `alice`,
-who accepted _P_ and then promised to accept _R_. It must have happened in that
-order as, having promised to accept _R_, `alice` would then not have been able
-to accept _P_. So the promise `alice` made would have included a
-`lastAcceptedValue` of **X**.
+another majority of acceptors which therefore overlaps _S_. Pick one of the
+acceptors in the overlap, say `alice`, who accepted _P_ and then promised to
+accept _R_. It must have happened in that order as, having promised to accept
+_R_, `alice` would then not have been able to accept _P_.
 
 <img src='proof/10-last-accepted-1.png' width='600px' />
 
-This is true even if `alice` accepted a later proposal than _P_ before
-promising to accept _R_: all such proposals have value **X**.
+Of course `alice` may also have accepted some proposals later than _P_ before
+promising to accept _R_. In any case, the highest-numbered one accepted by
+`alice` has value **X** as it is no earlier than _P_ and is strictly earlier
+than _R_.
 
 <img src='proof/11-last-accepted-2.png' width='600px' />
 
-Therefore the promise made by `alice` must have included a
+Therefore when `alice` promised to accept _R_, the promise must have included a
 `lastAcceptedTimePeriod` that is no earlier than _P_ and is strictly earlier
 than _R_, and the `lastAcceptedValue` is **X**. The other promises may also
 have included a `lastAcceptedTimePeriod`, all of which are strictly less than
