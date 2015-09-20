@@ -190,15 +190,15 @@ instance ToJSON Config where
 
 instance FromJSON Config where
   parseJSON = withObject "Config" $ \o -> Config
-    <$> o .: "get-timeout-sec"
-    <*> o .: "queue-expiry-sec"
-    <*> o .: "drop-percentage"
-    <*> o .: "min-delay-sec"
-    <*> o .: "max-delay-sec"
-    <*> o .: "nag-period-sec"
-    <*> o .: "partitioned-acceptors"
-    <*> o .: "show-incoming"
-    <*> o .: "show-outgoing"
+    <$> o .:? "get-timeout-sec"       .!= 10
+    <*> o .:? "queue-expiry-sec"      .!= 60
+    <*> o .:? "drop-percentage"       .!= 0
+    <*> o .:? "min-delay-sec"         .!= 0
+    <*> o .:? "max-delay-sec"         .!= 0
+    <*> o .:? "nag-period-sec"        .!= 5
+    <*> o .:? "partitioned-acceptors" .!= []
+    <*> o .:? "show-incoming"         .!= True
+    <*> o .:? "show-outgoing"         .!= False
 
 data Status = Status Config Integer (M.Map Integer B.ByteString) [B.ByteString] [(B.ByteString, UTCTime, Bool)]
 
@@ -275,17 +275,7 @@ main = execParser optParser >>= \StaticConfig{..} -> do
   minTimePeriodVar         <- newTVarIO 0
   proposersByTimePeriodVar <- newTVarIO M.empty
   nextProposersVar         <- newTVarIO []
-  configVar                <- newTVarIO $ Config
-    { cGetTimeoutSec  = 10
-    , cQueueExpirySec = 60
-    , cDropPercentage = 0
-    , cMinDelaySec    = 0
-    , cMaxDelaySec    = 0
-    , cNagPeriodSec   = 5
-    , cPartitionedAcceptors = []
-    , cShowIncoming   = True
-    , cShowOutgoing   = False
-    }
+  configVar                <- newTVarIO $ case decode "{}" of Nothing -> error "could not decode empty config"; Just defaultConfig -> defaultConfig
 
   let logMessage :: UTCTime -> MessageDirection -> B.ByteString -> String -> IO ()
       logMessage time messageDirection queueName message = void $ forkIO $ withMVar logLock $ \_ -> do
