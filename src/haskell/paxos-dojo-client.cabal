@@ -17,7 +17,17 @@ executable paxos-client
   main-is:             main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
-    , containers, bytestring, hspec,unix, optparse-applicative,http-types
-    , http-client, MissingH, hashable, aeson, mtl, transformers
+    , containers
+    , bytestring
+    , hspec
+    , unix
+    , optparse-applicative
+    , http-types
+    , http-client
+    , MissingH
+    , hashable
+    , aeson
+    , mtl
+    , transformers
   default-language:    Haskell2010
 
