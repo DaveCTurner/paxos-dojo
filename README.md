@@ -115,7 +115,7 @@ More precisely, it receives messages that look like this:
 It doesn't send any messages, but should report to the user when it has learned
 a value. It learns a value by receiving two messages for the same `$TIMEPERIOD`
 (a positive integer) but different `$NAME`s (which are strings). In this case,
-the `$VALUE` of the two messages will always be the same, so it desn't matter
+the `$VALUE` of the two messages will always be the same, so it doesn't matter
 which one you choose to report.
 
 A simple Learner implementation is to keep a list of all messages received and
@@ -127,7 +127,7 @@ Here is an example of the expected behaviour:
 
 ```javascript
 {"type":"accepted","timePeriod":1,"by":"alice","value":"value 1"}
-  // no value learned - no previous messags
+  // no value learned - no previous messages
 
 {"type":"accepted","timePeriod":2,"by":"brian","value":"value 2"}
   // no value learned - different $TIMEPERIOD from previous message
